@@ -1,4 +1,4 @@
-# Grundlægende data science projekt
+# gds-projekt
 Projekt til grundlægende data science
 
 test
