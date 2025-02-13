@@ -2,7 +2,7 @@
 
 run in a terminal window:
 ```
-git clone Lauritz-Uni/gds-projekt
+git clone https://github.com/Lauritz-Uni/gds-projekt.git
 cd gds-projekt
 code .
 ```
