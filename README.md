@@ -1,5 +1,11 @@
 # Grundlægende data science projekt
 
+run in a terminal window:
+```
+git clone Lauritz-Uni/gds-projekt
+cd gds-projekt
+code .
+```
 
 ## Task 1
 
