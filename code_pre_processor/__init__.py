@@ -21,42 +21,50 @@ def process_text(text):
     
     # Lowercase and remove punctuation
     text = text.lower()
-    text = re.sub(f"[{string.punctuation}]", " ", text)  # Remove punctuation
+    text = re.sub(f"\W", " ", text)  # Remove punctuation
     tokens = word_tokenize(text)  # Use NLTK's word_tokenize for tokenization
     
     return tokens
 
 # Load the dataset
 file_path = "data/news_sample.csv"
-df = pd.read_csv(file_path)
+csv_data = pd.read_csv(file_path)
 
 # Apply tokenization
-df["tokens"] = df["content"].apply(process_text)
+csv_data["tokens"] = csv_data["content"].apply(process_text)
 
 # Compute vocabulary size before stopword removal
-vocab_before_stopwords = set(word for tokens in df["tokens"] for word in tokens)
+vocab_before_stopwords = set(word for tokens in csv_data["tokens"] for word in tokens)
 vocab_size_before_stopwords = len(vocab_before_stopwords)
 
+def stopword_removal(tokens):
+    stopword_list = set(stopwords.words('english'))
+    tokens_no_stopwords = []
+    for word in tokens:
+        if word not in stopword_list:
+            tokens_no_stopwords.append(word)
+    return tokens_no_stopwords
+
 # Remove stopwords using NLTK's stopwords list
-stopword_list = set(stopwords.words('english'))
-df["tokens_no_stopwords"] = df["tokens"].apply(lambda tokens: [word for word in tokens if word.lower() not in stopword_list])
+csv_data["tokens_no_stopwords"] = csv_data["tokens"].apply(stopword_removal)
 
 # Compute vocabulary size after stopword removal
-vocab_after_stopwords = set(word for tokens in df["tokens_no_stopwords"] for word in tokens)
+vocab_after_stopwords = set(word for tokens in csv_data["tokens_no_stopwords"] for word in tokens)
 vocab_size_after_stopwords = len(vocab_after_stopwords)
+print(csv_data["tokens_no_stopwords"][1])
 
 # Compute reduction rate after stopword removal
 reduction_rate_stopwords = (1 - vocab_size_after_stopwords / vocab_size_before_stopwords) * 100
 
 # Apply stemming
-df["tokens_stemmed"] = df["tokens_no_stopwords"].apply(lambda tokens: [stemmer.stem(word) for word in tokens])
+csv_data["tokens_stemmed"] = csv_data["tokens_no_stopwords"].apply(lambda tokens: [stemmer.stem(word) for word in tokens])
 
 # Compute vocabulary size after stemming
-vocab_after_stemming = set(word for tokens in df["tokens_stemmed"] for word in tokens)
+vocab_after_stemming = set(word for tokens in csv_data["tokens_stemmed"] for word in tokens)
 vocab_size_after_stemming = len(vocab_after_stemming)
 
 # Compute reduction rate after stemming
-reduction_rate_stemming = (1 - vocab_size_after_stemming / vocab_size_before_stopwords) * 100
+reduction_rate_stemming = (1 - vocab_size_after_stemming / vocab_size_after_stopwords) * 100
 
 # Display results
 results = {
@@ -69,4 +77,16 @@ results = {
 
 [print(result, results[result]) for result in results]
 
-print(df['tokens_stemmed'][0])
+# words_freq = {}
+
+# for tokens in csv_data["tokens_no_stopwords"]:
+#     for word in tokens:
+#         try:
+#             words_freq[word] += 1
+#         except KeyError as e:
+#             words_freq[word] = 1
+
+# for word in words_freq:
+#     if(words_freq[word] > 200):
+#         print(word, words_freq[word])
+
