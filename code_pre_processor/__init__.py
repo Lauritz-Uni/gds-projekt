@@ -30,6 +30,7 @@ def tokenize(text):
     text = text.lower()
     text = re.sub(r"\W", " ", text)  # Remove punctuation
     tokens = word_tokenize(text)  # Use NLTK's word_tokenize for tokenization
+
     
     return tokens
 
