@@ -12,6 +12,15 @@ def read_csv_file(file_path):
 
     return csv_data
 
+def replace_fields(csv_data, column):
+    url_pattern = ''
+
+    for document in csv_data[column]:
+        pass
+    re.findall(url_pattern, csv_data)
+
+    return csv_data
+
 # Function to clean and tokenize text
 def tokenize(text):
     if pd.isna(text):
@@ -47,6 +56,9 @@ def process_text(file_path, column_to_process):
 
     csv_data = read_csv_file(file_path)
 
+    #Remove special fields
+    csv_data = replace_fields(csv_data, column_to_process)
+
     # Apply tokenization
     csv_data[column_to_process+"-tokens"] = csv_data[column_to_process].apply(tokenize)
 
@@ -54,7 +66,7 @@ def process_text(file_path, column_to_process):
     csv_data[column_to_process+"-tokens_no_stopwords"] = csv_data[column_to_process+"-tokens"].apply(stopword_removal)
 
     # Apply stemming
-    csv_data[column_to_process+"-tokens_stemmed"] = csv_data[column_to_process+"-tokens_no_stopwords"].apply(lambda tokens: [stemmer.stem(word) for word in tokens])
+    csv_data[column_to_process+"tokens_stemmed"] = csv_data[column_to_process+"-tokens_no_stopwords"].apply(lambda tokens: [stemmer.stem(word) for word in tokens])
 
     print(f"[!] Done processing text")
 
