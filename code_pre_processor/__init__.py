@@ -76,17 +76,3 @@ results = {
 }
 
 [print(result, results[result]) for result in results]
-
-# words_freq = {}
-
-# for tokens in csv_data["tokens_no_stopwords"]:
-#     for word in tokens:
-#         try:
-#             words_freq[word] += 1
-#         except KeyError as e:
-#             words_freq[word] = 1
-
-# for word in words_freq:
-#     if(words_freq[word] > 200):
-#         print(word, words_freq[word])
-
