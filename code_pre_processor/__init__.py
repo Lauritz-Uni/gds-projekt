@@ -33,8 +33,6 @@ def stopword_removal(tokens):
     return tokens_no_stopwords
 
 
-
-
 def process_text(file_path, column_to_process):
     print(f"[#] Processing {file_path} at column {column_to_process}")
 
@@ -49,33 +47,33 @@ def process_text(file_path, column_to_process):
     csv_data = read_csv_file(file_path)
 
     # Apply tokenization
-    csv_data[column_to_process+"tokens"] = csv_data[column_to_process].apply(tokenize)
+    csv_data[column_to_process+"-tokens"] = csv_data[column_to_process].apply(tokenize)
 
     # Remove stopwords using NLTK's stopwords list
-    csv_data["tokens_no_stopwords"] = csv_data["tokens"].apply(stopword_removal)
+    csv_data[column_to_process+"-tokens_no_stopwords"] = csv_data[column_to_process+"-tokens"].apply(stopword_removal)
 
     # Apply stemming
-    csv_data["tokens_stemmed"] = csv_data["tokens_no_stopwords"].apply(lambda tokens: [stemmer.stem(word) for word in tokens])
+    csv_data[column_to_process+"-tokens_stemmed"] = csv_data[column_to_process+"-tokens_no_stopwords"].apply(lambda tokens: [stemmer.stem(word) for word in tokens])
 
     print(f"[!] Done processing text")
 
     return csv_data
 
 
-def get_vocabulary_size(csv_data):
+def get_vocabulary_size(csv_data, column):
     # Compute vocabulary size before stopword removal
-    vocab_before_stopwords = set(word for tokens in csv_data["tokens"] for word in tokens)
+    vocab_before_stopwords = set(word for tokens in csv_data[column+"-tokens"] for word in tokens)
     vocab_size_before_stopwords = len(vocab_before_stopwords)
 
     # Compute vocabulary size after stopword removal
-    vocab_after_stopwords = set(word for tokens in csv_data["tokens_no_stopwords"] for word in tokens)
+    vocab_after_stopwords = set(word for tokens in csv_data[column+"-tokens_no_stopwords"] for word in tokens)
     vocab_size_after_stopwords = len(vocab_after_stopwords)
 
     # Compute reduction rate after stopword removal
     reduction_rate_stopwords = (1 - vocab_size_after_stopwords / vocab_size_before_stopwords) * 100
 
     # Compute vocabulary size after stemming
-    vocab_after_stemming = set(word for tokens in csv_data["tokens_stemmed"] for word in tokens)
+    vocab_after_stemming = set(word for tokens in csv_data[column+"-tokens_stemmed"] for word in tokens)
     vocab_size_after_stemming = len(vocab_after_stemming)
 
     # Compute reduction rate after stemming
@@ -94,4 +92,14 @@ def get_vocabulary_size(csv_data):
 
 def print_vocabulary_size(results_to_print):
     for key in results_to_print:
-        print(key+results_to_print[key])
+        print(f"{key}: {results_to_print[key]}")
+
+
+if __name__ == "__main__":
+    test_path = 'data/news_sample.csv'
+
+    csv_data = process_text(test_path, 'content')
+
+    vocab_size = get_vocabulary_size(csv_data, 'content')
+
+    print_vocabulary_size(vocab_size)
