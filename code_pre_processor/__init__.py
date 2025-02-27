@@ -60,7 +60,7 @@ PLACEHOLDERS = {
 # File Reading Function
 # ======================
 
-def read_csv_file(self, file_path: str) -> pd.DataFrame:
+def read_csv_file(file_path: str) -> pd.DataFrame:
         """Read CSV file"""
         return pd.read_csv(file_path)
 
@@ -124,6 +124,10 @@ class TextProcessor:
         # Add cleaned text column
         df[f"{column}-cleaned"] = df[column].apply(self._replace_fields)
         return df
+    
+    def is_placeholder(self, token: str) -> bool:
+        """Check if a token matches one of the predefined placeholders."""
+        return token in PLACEHOLDERS.values()
 
     # ======================
     # Tokenization & Stemming
@@ -167,11 +171,15 @@ class TextProcessor:
     def remove_stopwords(self, tokens: List[str]) -> List[str]:
         """Remove stopwords from token list"""
         stop_words = set(stopwords.words('english'))
-        return [token for token in tokens if token not in stop_words]
+        return [token for token in tokens if token not in stop_words or self.is_placeholder(token)]
 
     def stem_tokens(self, tokens: List[str]) -> List[str]:
         """Apply Porter stemming to tokens"""
-        return [self.stemmer.stem(token) for token in tokens]
+        def stem(token):
+            if self.is_placeholder(token):
+                return token
+            return self.stemmer.stem(token)
+        return [stem(token) for token in tokens]
 
     # ======================
     # Full Processing Pipeline
