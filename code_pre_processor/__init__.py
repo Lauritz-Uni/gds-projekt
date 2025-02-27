@@ -5,127 +5,245 @@ import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
+from urlextract import URLExtract
+from typing import Dict, List, Set
 
-def read_csv_file(file_path):
-    # Load the dataset
-    csv_data = pd.read_csv(file_path)
-
-    return csv_data
-
-def replace_fields(csv_data: pd.DataFrame, column: str):
-    # Url pattern from https://gist.github.com/gruber/8891611
-    url_pattern = r"(?i)\b((?:https?:(?:/{1,3}|[a-z0-9%])|[a-z0-9.\-]+[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)/)(?:[^\s()<>{}\[\]]+|\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\))+(?:\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’])|(?:(?<!@)[a-z0-9]+(?:[.\-][a-z0-9]+)*[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)\b/?(?!@)))"
-
-    def new_url_column(text):
-        data = re.findall(url_pattern, text)
-        return data
-
-    def remove_urls(text):
-        return re.sub(url_pattern, '<URL>', text)
-    
-
-    csv_data[column+"-urls"] = csv_data[column].apply(new_url_column)
-    print(f"Length of {column}-urls column: {len(csv_data[column+"-urls"])}")
-
-    csv_data[column+"-removed_fields"] = csv_data[column].apply(remove_urls)
-
-    print(csv_data[column+"-removed_fields"][1])
-
-    return csv_data
-
-# Function to clean and tokenize text
-def tokenize(text):
-    if pd.isna(text):
-        return []
-    
-    # TODO: fix replace_fields such that <URL> and other fields are not tokenized
-    # Lowercase and remove punctuation
-    text = text.lower()
-    text = re.sub(r"\W(?!<[A-Z]*>)", " ", text)  # Remove punctuation
-    tokens = word_tokenize(text)  # Use NLTK's word_tokenize for tokenization
-
-    
-    return tokens
-
-def stopword_removal(tokens):
-    stopword_list = set(stopwords.words('english'))
-    tokens_no_stopwords = []
-    for word in tokens:
-        if word not in stopword_list:
-            tokens_no_stopwords.append(word)
-    return tokens_no_stopwords
+"""
+This module provides a text processing pipeline for analyzing vocabulary statistics in a dataset.
+The pipeline includes the following steps:
+1. Field Extraction: Extract special fields like URLs, dates, emails, and numbers.
+2. Field Replacement: Replace special fields with placeholders.
+3. Tokenization: Tokenize text while preserving placeholders.
+4. Stopword Removal: Remove stopwords from token list.
+5. Stemming: Apply Porter stemming to tokens.
+6. Vocabulary Analysis: Calculate vocabulary statistics like vocabulary size, stopword reduction rate, and stemming reduction rate.
 
 
-def process_text(file_path, column_to_process):
-    print(f"[#] Processing {file_path} at column {column_to_process}")
+How to use the code:
+import code_pre_processor as cpp
 
-    # Ensure necessary NLTK resources are available
-    nltk.download('punkt')
-    nltk.download('punkt_tab')
-    nltk.download('stopwords')
+processor = cpp.TextProcessor()
+test_path = 'data/news_sample.csv'
+processed_data = processor.full_pipeline(test_path, 'content')
 
-    # Initialize the Porter Stemmer
-    stemmer = PorterStemmer()
+analyzer = cpp.VocabularyAnalyzer()
+stats = analyzer.get_vocabulary_stats(processed_data, 'content')
+analyzer.print_stats(stats)
+"""
 
-    csv_data = read_csv_file(file_path)
+# ======================
+# Constants & Patterns
+# ======================
 
-    #Remove special fields
-    csv_data = replace_fields(csv_data, column_to_process)
+PATTERNS = {
+    'url': None,  # Handled by URLExtract
+    'date': (
+        r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b'
+        r'|\b\d{4}[.-]\d{1,2}[.-]\d{1,2}\b'
+        r'|\b\d{1,2}\s(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s\d{4}\b'
+        r'|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s\d{1,2},\s\d{4}\b'
+        r'|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s\d{1,2}\b'
+        r'|\b\d{1,2}\s(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b'
+    ),
+    'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+    'number': r'\b\d+\b'
+}
 
-    # Apply tokenization
-    csv_data[column_to_process+"-tokens"] = csv_data[column_to_process+"-removed_fields"].apply(tokenize)
+PLACEHOLDERS = {
+    'url': '<URL>',
+    'date': '<DATE>',
+    'email': '<EMAIL>',
+    'number': '<NUMBER>'
+}
 
-    # Remove stopwords using NLTK's stopwords list
-    csv_data[column_to_process+"-tokens_no_stopwords"] = csv_data[column_to_process+"-tokens"].apply(stopword_removal)
+# ======================
+# File Reading Function
+# ======================
 
-    # Apply stemming
-    csv_data[column_to_process+"-tokens_stemmed"] = csv_data[column_to_process+"-tokens_no_stopwords"].apply(lambda tokens: [stemmer.stem(word) for word in tokens])
-    print(csv_data[column_to_process+"-tokens_stemmed"][1])
-    print(f"[!] Done processing text")
+def read_csv_file(self, file_path: str) -> pd.DataFrame:
+        """Read CSV file"""
+        return pd.read_csv(file_path)
 
-    return csv_data
+# ======================
+# Text Processing Class
+# ======================
 
+class TextProcessor:
+    def __init__(self):
+        self.extractor = URLExtract()
+        self.stemmer = PorterStemmer()
+        self._ensure_nltk_resources()
+        
+    def _ensure_nltk_resources(self):
+        """Ensure required NLTK resources are downloaded"""
+        resources = ['punkt', 'punkt_tab', 'stopwords']
+        for resource in resources:
+            try:
+                nltk.data.find(f'tokenizers/{resource}')
+            except LookupError:
+                nltk.download(resource)
 
-def get_vocabulary_size(csv_data, column):
-    # Compute vocabulary size before stopword removal
-    vocab_before_stopwords = set(word for tokens in csv_data[column+"-tokens"] for word in tokens)
-    vocab_size_before_stopwords = len(vocab_before_stopwords)
+    # ======================
+    # Field Replacement Logic
+    # ======================
 
-    # Compute vocabulary size after stopword removal
-    vocab_after_stopwords = set(word for tokens in csv_data[column+"-tokens_no_stopwords"] for word in tokens)
-    vocab_size_after_stopwords = len(vocab_after_stopwords)
+    def _extract_field(self, text: str, field_type: str) -> List[str]:
+        """Generic field extraction method"""
+        if field_type == 'url':
+            return self.extractor.find_urls(text)
+        return re.findall(
+            PATTERNS[field_type], 
+            text, 
+            flags=re.IGNORECASE if field_type == 'date' else 0
+        )
 
-    # Compute reduction rate after stopword removal
-    reduction_rate_stopwords = (1 - vocab_size_after_stopwords / vocab_size_before_stopwords) * 100
+    def _replace_fields(self, text: str) -> str:
+        """Replace all special fields with placeholders
+        
+        Example:
 
-    # Compute vocabulary size after stemming
-    vocab_after_stemming = set(word for tokens in csv_data[column+"-tokens_stemmed"] for word in tokens)
-    vocab_size_after_stemming = len(vocab_after_stemming)
+        Input: "Hello https://www.google.com world"
 
-    # Compute reduction rate after stemming
-    reduction_rate_stemming = (1 - vocab_size_after_stemming / vocab_size_after_stopwords) * 100
+        Output: "Hello \\<URL\\> world"
+        """
+        for field_type in PATTERNS.keys():
+            matches = self._extract_field(text, field_type)
+            placeholder = PLACEHOLDERS[field_type]
+            for match in matches:
+                text = text.replace(match, placeholder)
+        return text
 
-    # Display results
-    results = {
-        "Vocabulary Size Before Stopwords": vocab_size_before_stopwords,
-        "Vocabulary Size After Stopwords": vocab_size_after_stopwords,
-        "Reduction Rate After Stopwords (%)": reduction_rate_stopwords,
-        "Vocabulary Size After Stemming": vocab_size_after_stemming,
-        "Reduction Rate After Stemming (%)": reduction_rate_stemming,
-    }
+    def process_fields(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
+        """Add columns with extracted fields and cleaned text"""
+        # Add extraction columns
+        for field_type in PATTERNS.keys():
+            df[f"{column}-{field_type}s"] = df[column].apply(
+                lambda x: self._extract_field(x, field_type)
+            )
+        
+        # Add cleaned text column
+        df[f"{column}-cleaned"] = df[column].apply(self._replace_fields)
+        return df
 
-    return results
+    # ======================
+    # Tokenization & Stemming
+    # ======================
 
-def print_vocabulary_size(results_to_print):
-    for key in results_to_print:
-        print(f"{key}: {results_to_print[key]}")
+    def tokenize(self, text: str) -> List[str]:
+        """Tokenize text while preserving placeholders
+        
+        Example:
 
+        Input: "Hello \\<URL\\> world"
+
+        Output: ["hello", "\\<URL\\>", "world"]
+        """
+        if pd.isna(text):
+            return []
+        
+        # Regex pattern to match placeholders (e.g., <URL>, <DATE>)
+        placeholder_pattern = r'(<\w+>)'
+        
+        # Split text into parts: placeholders and other text
+        parts = re.split(placeholder_pattern, text)
+        
+        tokens = []
+        for part in parts:
+            if not part:
+                continue
+            # Check if the part is a placeholder
+            if re.fullmatch(placeholder_pattern, part):
+                tokens.append(part)
+            else:
+                # Process non-placeholder text with word_tokenize and cleaning
+                sub_tokens = word_tokenize(part)
+                for token in sub_tokens:
+                    # Remove punctuation and lowercase while preserving underscores
+                    cleaned = re.sub(r'[^\w\s]', '', token.lower())
+                    if cleaned:
+                        tokens.append(cleaned)
+        return tokens
+
+    def remove_stopwords(self, tokens: List[str]) -> List[str]:
+        """Remove stopwords from token list"""
+        stop_words = set(stopwords.words('english'))
+        return [token for token in tokens if token not in stop_words]
+
+    def stem_tokens(self, tokens: List[str]) -> List[str]:
+        """Apply Porter stemming to tokens"""
+        return [self.stemmer.stem(token) for token in tokens]
+
+    # ======================
+    # Full Processing Pipeline
+    # ======================
+
+    def full_pipeline(self, file_path: str, target_column: str) -> pd.DataFrame:
+        """Complete text processing pipeline"""
+        print(f"[#] Processing {file_path} for column {target_column}")
+        
+        df = self.read_csv_file(file_path)
+        df = self.process_fields(df, target_column)
+        
+        # Tokenization steps
+        df[f"{target_column}-tokens"] = df[f"{target_column}-cleaned"].apply(self.tokenize)
+        df[f"{target_column}-tokens_no_stop"] = df[f"{target_column}-tokens"].apply(self.remove_stopwords)
+        df[f"{target_column}-tokens_stemmed"] = df[f"{target_column}-tokens_no_stop"].apply(self.stem_tokens)
+        print(df[f"{target_column}"][1])
+        print(df[f"{target_column}-tokens"][1])
+        print(df[f"{target_column}-tokens_stemmed"][1])
+        
+        print("[!] Processing complete")
+        return df
+
+# ======================
+# Vocabulary Analysis
+# ======================
+
+class VocabularyAnalyzer:
+    @staticmethod
+    def get_vocabulary_stats(df: pd.DataFrame, column: str) -> Dict[str, float]:
+        """Calculate vocabulary statistics"""
+        vocab_sizes = {}
+        
+        for stage in ['tokens', 'tokens_no_stop', 'tokens_stemmed']:
+            vocab = set(word for tokens in df[f"{column}-{stage}"] for word in tokens)
+            vocab_sizes[stage] = len(vocab)
+        
+        return {
+            'vocabulary_size_raw': vocab_sizes['tokens'],
+            'vocabulary_size_no_stopwords': vocab_sizes['tokens_no_stop'],
+            'vocabulary_size_stemmed': vocab_sizes['tokens_stemmed'],
+            'stopword_reduction_rate': (
+                (1 - vocab_sizes['tokens_no_stop'] / vocab_sizes['tokens']) * 100
+            ),
+            'stemming_reduction_rate': (
+                (1 - vocab_sizes['tokens_stemmed'] / vocab_sizes['tokens_no_stop']) * 100
+            )
+        }
+
+    @staticmethod
+    def print_stats(stats: Dict[str, float]):
+        """Print formatted vocabulary statistics"""
+        for key, value in stats.items():
+            if 'rate' in key:
+                print(f"{key.replace('_', ' ').title()}: {value:.2f}%")
+            else:
+                print(f"{key.replace('_', ' ').title()}: {value}")
+
+# ======================
+# Main Execution
+# ======================
 
 if __name__ == "__main__":
+    processor = TextProcessor()
+    analyzer = VocabularyAnalyzer()
+    
+
     test_path = 'data/news_sample.csv'
+    processed_data = processor.full_pipeline(test_path, 'content')
 
-    csv_data = process_text(test_path, 'content')
 
-    vocab_size = get_vocabulary_size(csv_data, 'content')
-
-    print_vocabulary_size(vocab_size)
+    print("[#] Calculating vocabulary statistics")    
+    stats = analyzer.get_vocabulary_stats(processed_data, 'content')
+    analyzer.print_stats(stats)
+    print("[!] Analysis complete")
