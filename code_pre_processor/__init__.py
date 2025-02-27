@@ -181,7 +181,7 @@ class TextProcessor:
         """Complete text processing pipeline"""
         print(f"[#] Processing {file_path} for column {target_column}")
         
-        df = self.read_csv_file(file_path)
+        df = read_csv_file(file_path)
         df = self.process_fields(df, target_column)
         
         # Tokenization steps
