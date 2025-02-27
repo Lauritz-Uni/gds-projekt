@@ -90,7 +90,14 @@ class TextProcessor:
         )
 
     def _replace_fields(self, text: str) -> str:
-        """Replace all special fields with placeholders"""
+        """Replace all special fields with placeholders
+        
+        Example:
+
+        Input: "Hello https://www.google.com world"
+
+        Output: "Hello \\<URL\\> world"
+        """
         for field_type in PATTERNS.keys():
             matches = self._extract_field(text, field_type)
             placeholder = PLACEHOLDERS[field_type]
@@ -115,20 +122,38 @@ class TextProcessor:
     # ======================
 
     def tokenize(self, text: str) -> List[str]:
-        """Tokenize text while preserving placeholders"""
+        """Tokenize text while preserving placeholders
+        
+        Example:
+
+        Input: "Hello \\<URL\\> world"
+
+        Output: ["hello", "\\<URL\\>", "world"]
+        """
         if pd.isna(text):
             return []
-            
-        # Preserve placeholders and lowercase other text
+        
+        # Regex pattern to match placeholders (e.g., <URL>, <DATE>)
+        placeholder_pattern = r'(<\w+>)'
+        
+        # Split text into parts: placeholders and other text
+        parts = re.split(placeholder_pattern, text)
+        
         tokens = []
-        for token in word_tokenize(text):
-            if token.startswith('<') and token.endswith('>'):
-                tokens.append(token)
+        for part in parts:
+            if not part:
+                continue
+            # Check if the part is a placeholder
+            if re.fullmatch(placeholder_pattern, part):
+                tokens.append(part)
             else:
-                # Remove punctuation and lowercase
-                cleaned = re.sub(r'[^\w\s]', '', token.lower())
-                if cleaned:
-                    tokens.append(cleaned)
+                # Process non-placeholder text with word_tokenize and cleaning
+                sub_tokens = word_tokenize(part)
+                for token in sub_tokens:
+                    # Remove punctuation and lowercase while preserving underscores
+                    cleaned = re.sub(r'[^\w\s]', '', token.lower())
+                    if cleaned:
+                        tokens.append(cleaned)
         return tokens
 
     def remove_stopwords(self, tokens: List[str]) -> List[str]:
@@ -139,6 +164,10 @@ class TextProcessor:
     def stem_tokens(self, tokens: List[str]) -> List[str]:
         """Apply Porter stemming to tokens"""
         return [self.stemmer.stem(token) for token in tokens]
+    
+    def read_csv_file(self, file_path: str) -> pd.DataFrame:
+        """Read CSV file"""
+        return pd.read_csv(file_path)
 
     # ======================
     # Full Processing Pipeline
@@ -148,13 +177,16 @@ class TextProcessor:
         """Complete text processing pipeline"""
         print(f"[#] Processing {file_path} for column {target_column}")
         
-        df = pd.read_csv(file_path)
+        df = self.read_csv_file(file_path)
         df = self.process_fields(df, target_column)
         
         # Tokenization steps
         df[f"{target_column}-tokens"] = df[f"{target_column}-cleaned"].apply(self.tokenize)
         df[f"{target_column}-tokens_no_stop"] = df[f"{target_column}-tokens"].apply(self.remove_stopwords)
         df[f"{target_column}-tokens_stemmed"] = df[f"{target_column}-tokens_no_stop"].apply(self.stem_tokens)
+        print(df[f"{target_column}"][1])
+        print(df[f"{target_column}-tokens"][1])
+        print(df[f"{target_column}-tokens_stemmed"][1])
         
         print("[!] Processing complete")
         return df
@@ -202,8 +234,12 @@ if __name__ == "__main__":
     processor = TextProcessor()
     analyzer = VocabularyAnalyzer()
     
+
     test_path = 'data/news_sample.csv'
     processed_data = processor.full_pipeline(test_path, 'content')
-    
+
+
+    print("[#] Calculating vocabulary statistics")    
     stats = analyzer.get_vocabulary_stats(processed_data, 'content')
     analyzer.print_stats(stats)
+    print("[!] Analysis complete")
