@@ -57,6 +57,14 @@ PLACEHOLDERS = {
 }
 
 # ======================
+# File Reading Function
+# ======================
+
+def read_csv_file(self, file_path: str) -> pd.DataFrame:
+        """Read CSV file"""
+        return pd.read_csv(file_path)
+
+# ======================
 # Text Processing Class
 # ======================
 
@@ -164,10 +172,6 @@ class TextProcessor:
     def stem_tokens(self, tokens: List[str]) -> List[str]:
         """Apply Porter stemming to tokens"""
         return [self.stemmer.stem(token) for token in tokens]
-    
-    def read_csv_file(self, file_path: str) -> pd.DataFrame:
-        """Read CSV file"""
-        return pd.read_csv(file_path)
 
     # ======================
     # Full Processing Pipeline
