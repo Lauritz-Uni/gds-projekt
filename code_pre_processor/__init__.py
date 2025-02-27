@@ -7,6 +7,7 @@ from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 from urlextract import URLExtract
 from typing import Dict, List, Set
+import time
 
 """
 This module provides a text processing pipeline for analyzing vocabulary statistics in a dataset.
@@ -188,6 +189,8 @@ class TextProcessor:
     def full_pipeline(self, file_path: str, target_column: str) -> pd.DataFrame:
         """Complete text processing pipeline"""
         print(f"[#] Processing {file_path} for column {target_column}")
+
+        start_time = time.time()
         
         df = read_csv_file(file_path)
         df = self.process_fields(df, target_column)
@@ -196,11 +199,9 @@ class TextProcessor:
         df[f"{target_column}-tokens"] = df[f"{target_column}-cleaned"].apply(self.tokenize)
         df[f"{target_column}-tokens_no_stop"] = df[f"{target_column}-tokens"].apply(self.remove_stopwords)
         df[f"{target_column}-tokens_stemmed"] = df[f"{target_column}-tokens_no_stop"].apply(self.stem_tokens)
-        print(df[f"{target_column}"][1])
-        print(df[f"{target_column}-tokens"][1])
-        print(df[f"{target_column}-tokens_stemmed"][1])
-        
-        print("[!] Processing complete")
+
+        end_time = time.time()
+        print(f"[!] Processing completed in {end_time - start_time:.2f} seconds")
         return df
 
 # ======================
