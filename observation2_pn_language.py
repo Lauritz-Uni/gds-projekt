@@ -9,7 +9,7 @@ nltk.download('vader_lexicon')
 sia = SentimentIntensityAnalyzer()
 
 # Read text file
-file_path = ["Your are a good boy", "You dumb bitch"]  # Change this to file path
+file_path = ["Your are a good boy", "Hello you are stupid"]  # Change this to file path
 
 # Analyzing and printing
 for i, text in enumerate(file_path):
