@@ -1,9 +1,17 @@
 import code_pre_processor
+import pandas as pd
 from collections import Counter
-word_list = "list"                                                      #put list here
 
-fake_csv_file = code_pre_processor.read_csv_file("data/news_sample.csv")     #replace path with fake text path       
-reliable_csv_file = code_pre_processor.read_csv_file("data/news_sample.csv")     #replace path with reliable text path       
+
+# List of 10.000 most frequent words in all texts
+word_list = {"word", "list"}                                                                      #put list here
+
+# Reading csv files
+fake_csv_file = code_pre_processor.read_csv_file("fake_articles_sample.csv")            #replace path with fake text path       
+reliable_csv_file = code_pre_processor.read_csv_file("reliable_articles_sample.csv")     #replace path with reliable text path       
+
+
+
 
 fake_words = fake_csv_file.split()
 reliable_words = reliable_csv_file.split()
