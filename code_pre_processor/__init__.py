@@ -6,8 +6,9 @@ from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 from urlextract import URLExtract
-from typing import Dict, List, Set
+from typing import Dict, List, Tuple, Any
 import time
+import itertools
 
 """
 This module provides a text processing pipeline for analyzing vocabulary statistics in a dataset.
@@ -71,13 +72,26 @@ def read_csv_file(file_path: str) -> pd.DataFrame:
 
 class TextProcessor:
     def __init__(self):
+        """Initialize text processor with required resources"""
         self.extractor = URLExtract()
         self.stemmer = PorterStemmer()
+        self.stop_words = set(stopwords.words('english'))
         self._ensure_nltk_resources()
+        
+        # Precompile regex patterns
+        self.date_pattern = re.compile(PATTERNS['date'], re.IGNORECASE)
+        self.email_pattern = re.compile(PATTERNS['email'])
+        self.number_pattern = re.compile(PATTERNS['number'])
+        self.combined_pattern = re.compile(
+            rf'({PATTERNS["date"]})|({PATTERNS["email"]})|({PATTERNS["number"]})',
+            re.IGNORECASE
+        )
+        self.placeholder_regex = re.compile(r'(<\w+>)')
+        self.clean_token_regex = re.compile(r'[^\w\s]')
         
     def _ensure_nltk_resources(self):
         """Ensure required NLTK resources are downloaded"""
-        resources = ['punkt', 'punkt_tab', 'stopwords']
+        resources = ['punkt','punkt_tab', 'stopwords']
         for resource in resources:
             try:
                 nltk.data.find(f'tokenizers/{resource}')
@@ -88,146 +102,120 @@ class TextProcessor:
     # Field Replacement Logic
     # ======================
 
-    def _extract_field(self, text: str, field_type: str) -> List[str]:
-        """Generic field extraction method"""
-        if field_type == 'url':
-            return self.extractor.find_urls(text)
-        return re.findall(
-            PATTERNS[field_type], 
-            text, 
-            flags=re.IGNORECASE if field_type == 'date' else 0
-        )
-
-    def _replace_fields(self, text: str) -> str:
-        """Replace all special fields with placeholders
+    def _replace_and_extract(self, text: str) -> Tuple[str, Dict[str, List[str]]]:
+        """Replace special fields with placeholders and extract them"""
+        extracted = {k: [] for k in PATTERNS.keys()}
+        if not text:
+            return text, extracted
         
-        Example:
-
-        Input: "Hello https://www.google.com world"
-
-        Output: "Hello \\<URL\\> world"
-        """
-        for field_type in PATTERNS.keys():
-            matches = self._extract_field(text, field_type)
-            placeholder = PLACEHOLDERS[field_type]
-            for match in matches:
-                text = text.replace(match, placeholder)
-        return text
+        # Extract and replace URLs
+        urls = self.extractor.find_urls(text)
+        extracted['url'] = urls
+        for url in urls:
+            text = text.replace(url, PLACEHOLDERS['url'])
+        
+        # Extract and replace other fields
+        matches = []
+        for match in self.combined_pattern.finditer(text):
+            if match.group(1):
+                field = 'date'
+            elif match.group(2):
+                field = 'email'
+            elif match.group(3):
+                field = 'number'
+            else:
+                continue
+            extracted[field].append(match.group())
+            matches.append((match.start(), match.end(), field))
+        
+        # Replace from last to first to avoid offset issues
+        for start, end, field in sorted(matches, reverse=True, key=lambda x: x[0]):
+            text = text[:start] + PLACEHOLDERS[field] + text[end:]
+        
+        return text, extracted
 
     def process_fields(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
-        """Add columns with extracted fields and cleaned text"""
-        # Add extraction columns
-        for field_type in PATTERNS.keys():
-            df[f"{column}-{field_type}s"] = df[column].apply(
-                lambda x: self._extract_field(x, field_type)
-            )
-        
-        # Add cleaned text column
-        df[f"{column}-cleaned"] = df[column].apply(self._replace_fields)
+        """Process special fields in the given column"""
+        results = df[column].apply(self._replace_and_extract)
+        df[f"{column}-cleaned"] = results.apply(lambda x: x[0])
+        extracted = results.apply(lambda x: x[1])
+        for field in PATTERNS.keys():
+            df[f"{column}-{field}s"] = extracted.apply(lambda e: e.get(field, []))
         return df
     
-    def is_placeholder(self, token: str) -> bool:
-        """Check if a token matches one of the predefined placeholders."""
-        return token in PLACEHOLDERS.values()
-
     # ======================
     # Tokenization & Stemming
     # ======================
 
     def tokenize(self, text: str) -> List[str]:
-        """Tokenize text while preserving placeholders
-        
-        Example:
-
-        Input: "Hello \\<URL\\> world"
-
-        Output: ["hello", "\\<URL\\>", "world"]
-        """
+        """Tokenize text while preserving placeholders"""
         if pd.isna(text):
             return []
         
-        # Regex pattern to match placeholders (e.g., <URL>, <DATE>)
-        placeholder_pattern = r'(<\w+>)'
-        
-        # Split text into parts: placeholders and other text
-        parts = re.split(placeholder_pattern, text)
-        
         tokens = []
-        for part in parts:
+        parts = self.placeholder_regex.split(text)
+        for i, part in enumerate(parts):
             if not part:
                 continue
-            # Check if the part is a placeholder
-            if re.fullmatch(placeholder_pattern, part):
+            if i % 2 == 1:  # Placeholder
                 tokens.append(part)
-            else:
-                # Process non-placeholder text with word_tokenize and cleaning
-                sub_tokens = word_tokenize(part)
-                for token in sub_tokens:
-                    # Remove punctuation and lowercase while preserving underscores
-                    cleaned = re.sub(r'[^\w\s]', '', token.lower())
-                    if cleaned:
-                        tokens.append(cleaned)
+            else:           # Regular text
+                cleaned_part = self.clean_token_regex.sub('', part.lower())
+                if cleaned_part:
+                    tokens.extend(word_tokenize(cleaned_part))
         return tokens
 
     def remove_stopwords(self, tokens: List[str]) -> List[str]:
         """Remove stopwords from token list"""
-        stop_words = set(stopwords.words('english'))
-        return [token for token in tokens if token not in stop_words or self.is_placeholder(token)]
+        return [t for t in tokens if t in PLACEHOLDERS.values() or t not in self.stop_words]
 
     def stem_tokens(self, tokens: List[str]) -> List[str]:
         """Apply Porter stemming to tokens"""
-        def stem(token):
-            if self.is_placeholder(token):
-                return token
-            return self.stemmer.stem(token)
-        return [stem(token) for token in tokens]
-
+        return [t if t in PLACEHOLDERS.values() else self.stemmer.stem(t) for t in tokens]
+    
     # ======================
-    # Full Processing Pipeline
+    # Full Pipeline
     # ======================
 
     def full_pipeline(self, file_path: str, target_column: str) -> pd.DataFrame:
-        """Complete text processing pipeline"""
+        """Run full text processing pipeline on the given file and column"""
         print(f"[#] Processing {file_path} for column {target_column}")
-
         start_time = time.time()
         
-        df = read_csv_file(file_path)
+        print(f"[#] Reading csv file")
+        csv_start_time = time.time()
+        df = pd.read_csv(file_path)
         df = self.process_fields(df, target_column)
+        print(f"[!] Read csv file in {time.time() - csv_start_time:.2f}s")
         
-        # Tokenization steps
+        # Parallel processing steps
+        print("[#] Running text processing pipeline")
+        text_start_time = time.time()
         df[f"{target_column}-tokens"] = df[f"{target_column}-cleaned"].apply(self.tokenize)
         df[f"{target_column}-tokens_no_stop"] = df[f"{target_column}-tokens"].apply(self.remove_stopwords)
         df[f"{target_column}-tokens_stemmed"] = df[f"{target_column}-tokens_no_stop"].apply(self.stem_tokens)
+        print(f"[!] Completed text processing in {time.time() - text_start_time:.2f}s")
 
-        end_time = time.time()
-        print(f"[!] Processing completed in {end_time - start_time:.2f} seconds")
+        
+        print(f"[!] Full pipeline completed in {time.time() - start_time:.2f}s")
         return df
-
-# ======================
-# Vocabulary Analysis
-# ======================
 
 class VocabularyAnalyzer:
     @staticmethod
     def get_vocabulary_stats(df: pd.DataFrame, column: str) -> Dict[str, float]:
-        """Calculate vocabulary statistics"""
+        """Calculate vocabulary statistics for the given column"""
         vocab_sizes = {}
-        
         for stage in ['tokens', 'tokens_no_stop', 'tokens_stemmed']:
-            vocab = set(word for tokens in df[f"{column}-{stage}"] for word in tokens)
+            col = f"{column}-{stage}"
+            vocab = set(itertools.chain.from_iterable(df[col]))
             vocab_sizes[stage] = len(vocab)
         
         return {
             'vocabulary_size_raw': vocab_sizes['tokens'],
             'vocabulary_size_no_stopwords': vocab_sizes['tokens_no_stop'],
             'vocabulary_size_stemmed': vocab_sizes['tokens_stemmed'],
-            'stopword_reduction_rate': (
-                (1 - vocab_sizes['tokens_no_stop'] / vocab_sizes['tokens']) * 100
-            ),
-            'stemming_reduction_rate': (
-                (1 - vocab_sizes['tokens_stemmed'] / vocab_sizes['tokens_no_stop']) * 100
-            )
+            'stopword_reduction_rate': (1 - vocab_sizes['tokens_no_stop'] / vocab_sizes['tokens']) * 100,
+            'stemming_reduction_rate': (1 - vocab_sizes['tokens_stemmed'] / vocab_sizes['tokens_no_stop']) * 100
         }
 
     @staticmethod
