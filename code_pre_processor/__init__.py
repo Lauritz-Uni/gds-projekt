@@ -8,6 +8,29 @@ from nltk.stem import PorterStemmer
 from urlextract import URLExtract
 from typing import Dict, List, Set
 
+"""
+This module provides a text processing pipeline for analyzing vocabulary statistics in a dataset.
+The pipeline includes the following steps:
+1. Field Extraction: Extract special fields like URLs, dates, emails, and numbers.
+2. Field Replacement: Replace special fields with placeholders.
+3. Tokenization: Tokenize text while preserving placeholders.
+4. Stopword Removal: Remove stopwords from token list.
+5. Stemming: Apply Porter stemming to tokens.
+6. Vocabulary Analysis: Calculate vocabulary statistics like vocabulary size, stopword reduction rate, and stemming reduction rate.
+
+
+How to use the code:
+import code_pre_processor as cpp
+
+processor = cpp.TextProcessor()
+test_path = 'data/news_sample.csv'
+processed_data = processor.full_pipeline(test_path, 'content')
+
+analyzer = cpp.VocabularyAnalyzer()
+stats = analyzer.get_vocabulary_stats(processed_data, 'content')
+analyzer.print_stats(stats)
+"""
+
 # ======================
 # Constants & Patterns
 # ======================
