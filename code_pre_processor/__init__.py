@@ -60,7 +60,7 @@ PLACEHOLDERS = {
 # File Reading Function
 # ======================
 
-def read_csv_file(self, file_path: str) -> pd.DataFrame:
+def read_csv_file(file_path: str) -> pd.DataFrame:
         """Read CSV file"""
         return pd.read_csv(file_path)
 
