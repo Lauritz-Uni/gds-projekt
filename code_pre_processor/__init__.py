@@ -87,8 +87,9 @@ class TextProcessor:
         """Initialize text processor with required resources"""
         self.extractor = URLExtract()
         self.stemmer = PorterStemmer()
-        self.stop_words = set(stopwords.words('english'))
         self._ensure_nltk_resources()
+        self.stop_words = set(stopwords.words('english'))
+        
         
         # Precompile regex patterns
         self.date_pattern = re.compile(PATTERNS['date'], re.IGNORECASE)
