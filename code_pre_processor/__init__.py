@@ -9,6 +9,8 @@ from urlextract import URLExtract
 from typing import Dict, List, Tuple, Any
 import time
 import itertools
+import json
+import ast
 
 """
 This module provides a text processing pipeline for analyzing vocabulary statistics in a dataset.
@@ -37,6 +39,8 @@ analyzer.print_stats(stats)
 # Constants & Patterns
 # ======================
 
+COLUMNS = ['-tokens', '-tokens_no_stop', '-tokens_stemmed', '-urls', '-dates', '-emails', '-numbers']
+
 PATTERNS = {
     'url': None,  # Handled by URLExtract
     'date': (
@@ -62,9 +66,17 @@ PLACEHOLDERS = {
 # File Reading Function
 # ======================
 
-def read_csv_file(file_path: str) -> pd.DataFrame:
+def read_csv_file(file_path: str, column='content') -> pd.DataFrame:
         """Read CSV file"""
-        return pd.read_csv(file_path)
+        csv_data = pd.read_csv(file_path)
+        try:
+            csv_data[column+'-urls'][0]
+            for col in COLUMNS:
+                csv_data[column+col] = csv_data[column+col].apply(ast.literal_eval)
+        except KeyError:
+            print("# No processed data found in the csv file")
+            return None
+        return csv_data
 
 # ======================
 # Text Processing Class
@@ -178,27 +190,52 @@ class TextProcessor:
     # Full Pipeline
     # ======================
 
-    def full_pipeline(self, file_path: str, target_column: str) -> pd.DataFrame:
+    def full_pipeline(self, file_path: str, target_column: str, out_path=None, chunk_size = None) -> pd.DataFrame:
         """Run full text processing pipeline on the given file and column"""
         print(f"[#] Processing {file_path} for column {target_column}")
         start_time = time.time()
         
-        print(f"[#] Reading csv file")
-        csv_start_time = time.time()
-        df = pd.read_csv(file_path)
-        df = self.process_fields(df, target_column)
-        print(f"[!] Read csv file in {time.time() - csv_start_time:.2f}s")
-        
-        # Parallel processing steps
-        print("[#] Running text processing pipeline")
-        text_start_time = time.time()
-        df[f"{target_column}-tokens"] = df[f"{target_column}-cleaned"].apply(self.tokenize)
-        df[f"{target_column}-tokens_no_stop"] = df[f"{target_column}-tokens"].apply(self.remove_stopwords)
-        df[f"{target_column}-tokens_stemmed"] = df[f"{target_column}-tokens_no_stop"].apply(self.stem_tokens)
-        print(f"[!] Completed text processing in {time.time() - text_start_time:.2f}s")
+        if chunk_size is None:
+            print(f"[#] Reading csv file")
+            csv_start_time = time.time()
+            df = pd.read_csv(file_path)
+            df = self.process_fields(df, target_column)
+            print(f"[!] Read csv file in {time.time() - csv_start_time:.2f}s")
+            
+            # Parallel processing steps
+            print("[#] Running text processing pipeline")
+            text_start_time = time.time()
+            df[f"{target_column}-tokens"] = df[f"{target_column}-cleaned"].apply(self.tokenize)
+            df[f"{target_column}-tokens_no_stop"] = df[f"{target_column}-tokens"].apply(self.remove_stopwords)
+            df[f"{target_column}-tokens_stemmed"] = df[f"{target_column}-tokens_no_stop"].apply(self.stem_tokens)
+            print(f"[!] Completed text processing in {time.time() - text_start_time:.2f}s")
+        else:
+            # Chunked processing
+            print(f"[#] Reading and processing in chunks of {chunk_size}")
+            chunk_reader = pd.read_csv(file_path, chunksize=chunk_size)
+            accumulated_chunks = []
+            
+            for i, chunk in enumerate(chunk_reader):
+                print(f"[#] Processing chunk {i+1}")
+                chunk = self.process_fields(chunk, target_column)
+                
+                # Process tokens for current chunk
+                chunk[f"{target_column}-tokens"] = chunk[f"{target_column}-cleaned"].apply(self.tokenize)
+                chunk[f"{target_column}-tokens_no_stop"] = chunk[f"{target_column}-tokens"].apply(self.remove_stopwords)
+                chunk[f"{target_column}-tokens_stemmed"] = chunk[f"{target_column}-tokens_no_stop"].apply(self.stem_tokens)
+                
+                if out_path:
+                    # Write chunks to disk incrementally
+                    header = (i == 0)  # Write header only for first chunk
+                    chunk.to_csv(out_path, mode='a' if i > 0 else 'w', header=header, index=False)
+                else:
+                    accumulated_chunks.append(chunk)
+            
+            df = pd.concat(accumulated_chunks, ignore_index=True) if not out_path else None
 
         
         print(f"[!] Full pipeline completed in {time.time() - start_time:.2f}s")
+
         return df
 
 class VocabularyAnalyzer:
