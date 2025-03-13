@@ -1,2 +1,1 @@
-./data/"995,000_rows.csv"
-./data/"995,000_rows_processed.csv"
+data/*.csv
