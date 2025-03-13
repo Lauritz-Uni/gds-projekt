@@ -1,0 +1,116 @@
+use csv::Reader;
+use std::collections::HashSet;
+use std::fs::File;
+use std::error::Error;
+use regex::Regex;
+use csv::Writer;
+
+// Function to tokenize the content
+fn tokenize(content: &str) -> Vec<&str> {
+    content.split_whitespace().collect()
+}
+
+// Function to remove stopwords
+fn remove_stopwords<'a>(tokens: Vec<&'a str>, stopwords: &'a HashSet<&'a str>) -> Vec<&'a str> {
+    tokens.into_iter()
+        .filter(|word| !stopwords.contains(*word))
+        .collect()
+}
+
+// Function to clean text
+fn clean_text(text: &str) -> String {
+    let mut cleaned_text = text.to_lowercase(); // Convert to lowercase
+
+    // Replace numbers
+    let re_num = Regex::new(r"\b\d+\b").unwrap();
+    cleaned_text = re_num.replace_all(&cleaned_text, "<NUM>").to_string();
+
+    // Replace dates (example formats: YYYY-MM-DD, MM/DD/YYYY, DD.MM.YYYY)
+    let re_date = Regex::new(r"\b(\d{4}-\d{2}-\d{2})|(\d{2}/\d{2}/\d{4})|(\d{2}\.\d{2}\.\d{4})\b").unwrap();
+    cleaned_text = re_date.replace_all(&cleaned_text, "<DATE>").to_string();
+
+    // Replace emails
+    let re_email = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
+    cleaned_text = re_email.replace_all(&cleaned_text, "<EMAIL>").to_string();
+
+    // Replace URLs
+    let re_url = Regex::new(r"\b(https?://[^\s]+)|(\bwww\.[^\s]+)").unwrap();
+    cleaned_text = re_url.replace_all(&cleaned_text, "<URL>").to_string();
+
+    // Remove punctuation
+    let re_punct = Regex::new(r"[[:punct:]]").unwrap(); // Matches all punctuation characters
+    cleaned_text = re_punct.replace_all(&cleaned_text, "").to_string();
+
+    // Remove multiple whitespaces, tabs, and newlines
+    let re_whitespace = Regex::new(r"\s+").unwrap();
+    cleaned_text = re_whitespace.replace_all(&cleaned_text, " ").to_string();
+
+    cleaned_text.trim().to_string() // Trim any extra whitespace at the ends
+}
+
+// Function to process and save with cleaned text
+fn process_and_save(
+    input_file: &str,
+    output_file: &str,
+    column_name: &str,
+) -> Result<(), Box<dyn Error>> {
+    let mut rdr = Reader::from_path(input_file)?;
+    let mut wtr = Writer::from_path(output_file)?;
+
+    // Write headers for the output file (original headers + new column)
+    let mut headers = rdr.headers()?.clone();
+    headers.push_field("processed_content");
+    wtr.write_record(&headers)?;
+
+    // Find the index of the column name
+    let column_index = headers
+        .iter()
+        .position(|h| h == column_name)
+        .ok_or_else(|| format!("Column '{}' not found in headers", column_name))?;
+
+    // Prepare stopwords
+    let stopwords: HashSet<&str> = [
+        "a", "an", "the", "is", "and", "or", "to", "of", "it", "this", "that", // Add more stopwords here
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
+    for result in rdr.records() {
+        let record = result?;
+        let content = record.get(column_index).unwrap_or(""); // Use the dynamic column index
+
+        // Clean the text
+        let cleaned_content = clean_text(content);
+
+        // Tokenize and process the content
+        let tokens = tokenize(&cleaned_content);
+        let filtered_tokens = remove_stopwords(tokens, &stopwords);
+        let processed_content = filtered_tokens.join(" "); // Combine filtered tokens back into a single string
+
+        // Build the output record (original + processed content)
+        let mut new_record = record.clone();
+        new_record.push_field(&processed_content);
+
+        // Write the new record to the output file
+        wtr.write_record(&new_record)?;
+    }
+
+    wtr.flush()?; // Ensure all data is written to the file
+    println!(
+        "Processed data saved with cleaned and concatenated content to {}",
+        output_file
+    );
+
+    Ok(())
+}
+
+fn main() {
+    let input_file = "../data/news_sample.csv"; // Replace with your input CSV file path
+    let output_file = "../data/processed_news_with_column.csv"; // Replace with your desired output file name
+    let column_name = "content"; // Replace with the name of the column you want to process
+
+    if let Err(err) = process_and_save(input_file, output_file, column_name) {
+        eprintln!("Error: {}", err);
+    }
+}
