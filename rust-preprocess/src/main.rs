@@ -57,14 +57,14 @@ static RE_WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 fn load_stopwords(file_path: &str) -> Result<FxHashSet<String>, Box<dyn Error>> {
     Ok(std::fs::read_to_string(file_path)?
         .lines()
-        .map(|s| s.to_lowercase())
+        .map(|s: &str| s.to_lowercase())
         .collect())
 }
 
 
 fn tokenize(content: &str) -> Vec<String> {
     content.split_whitespace()
-        .map(|s| s.to_string())
+        .map(|s: &str| s.to_string())
         .collect()
 }
 
@@ -103,27 +103,25 @@ fn clean_text(text: &str) -> (String, Vec<String>, Vec<String>, Vec<String>, Vec
         }
     }).to_string();
 
-    let cleaned_text = RE_WHITESPACE
+    let cleaned_text: String = RE_WHITESPACE
         .replace_all(
             &cleaned_text
                 .split_whitespace()
-                .map(|word| {
+                .map(|word: &str| {
                     if word.starts_with('<') && word.ends_with('>') {
                         word.to_string()
                     } else {
                         RE_PUNCT.replace_all(word, "").into_owned()
                     }
                 })
-                .filter(|s| !s.is_empty())
+                .filter(|s: &String| !s.is_empty())
                 .collect::<Vec<_>>()
                 .join(" "),
             " ",
         )
         .trim()
-        .split_whitespace()
-        .map(ToString::to_string)
-        .collect();
-    
+        .to_string();  // Changed from Vec<String> collection
+
     (cleaned_text, dates, emails, urls, numbers)
 }
 
@@ -132,59 +130,63 @@ fn process_and_save(
     output_file: &str,
     column_name: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let start = Instant::now();
-    let mut rdr = Reader::from_path(input_file)?;
+    let start: Instant = Instant::now();
+    let mut rdr: Reader<std::fs::File> = Reader::from_path(input_file)?;
     let records: Vec<_> = rdr.records().collect::<Result<_, _>>()?;
     let total_records = records.len();
     println!("Time taken to read data: {:.2?}", start.elapsed());
 
-    let mut wtr = Writer::from_path(output_file)?;
-    let mut headers = rdr.headers()?.clone();
-    headers.push_field("content-tokens_stemmed");
+    let mut wtr: Writer<std::fs::File> = Writer::from_path(output_file)?;
+    let mut headers: csv::StringRecord = rdr.headers()?.clone();
     headers.push_field("dates");
     headers.push_field("emails");
     headers.push_field("urls");
     headers.push_field("numbers");
+    headers.push_field(&(column_name.to_owned()+"-tokens"));
+    headers.push_field(&(column_name.to_owned()+"-tokens_no_stop"));
+    headers.push_field(&(column_name.to_owned()+"-tokens_stemmed"));
     wtr.write_record(&headers)?;
 
-    let column_index = headers
+    let column_index: usize = headers
         .iter()
-        .position(|h| h == column_name)
+        .position(|h: &str| h == column_name)
         .ok_or_else(|| format!("Column '{}' not found", column_name))?;
 
-    let stopwords = load_stopwords("stopwords.txt")?;
-    let en_stemmer = Stemmer::create(Algorithm::English);
-    let pb = ProgressBar::new(total_records as u64);
+    let stopwords: std::collections::HashSet<String, std::hash::BuildHasherDefault<fxhash::FxHasher>> = load_stopwords("stopwords.txt")?;
+    let en_stemmer: Stemmer = Stemmer::create(Algorithm::English);
+    let pb: ProgressBar = ProgressBar::new(total_records as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40} {pos}/{len} ({percent}%) ETA: {eta_precise}")?
             .progress_chars("##-"),
     );
-    let pb_mutex = Mutex::new(pb);
+    let pb_mutex: Mutex<ProgressBar> = Mutex::new(pb);
 
     let processed_records: Vec<_> = records
         .par_iter()
-        .map(|record| {
-            let content = record.get(column_index).unwrap_or("");
+        .map(|record: &csv::StringRecord| {
+            let content: &str = record.get(column_index).unwrap_or("");
             
             // Get cleaned text and entities
             let (cleaned, dates, emails, urls, numbers) = clean_text(content);
             
             // Existing processing
-            let tokens = tokenize(&cleaned);
-            let filtered = remove_stopwords(tokens, &stopwords);
-            let stemmed = filtered.iter()
-                .map(|word| en_stemmer.stem(word).to_string())
+            let tokens: Vec<String> = tokenize(&cleaned);
+            let filtered: Vec<String> = remove_stopwords(tokens.clone(), &stopwords);
+            let stemmed: String = filtered.iter()
+                .map(|word: &String| en_stemmer.stem(word).to_string())
                 .collect::<Vec<_>>()
                 .join(" ");
 
             // Build new record with additional fields
-            let mut new_record = record.clone();
-            new_record.push_field(&stemmed);
+            let mut new_record: csv::StringRecord = record.clone();
             new_record.push_field(&dates.join("; "));
             new_record.push_field(&emails.join("; "));
             new_record.push_field(&urls.join("; "));
             new_record.push_field(&numbers.join("; "));
+            new_record.push_field(&tokens.join(" "));
+            new_record.push_field(&filtered.join(" "));
+            new_record.push_field(&stemmed);
             
             new_record
         })
@@ -201,9 +203,9 @@ fn process_and_save(
 }
 
 fn main() {
-    let args = Args::parse();
+    let args: Args = Args::parse();
     
-    let start = Instant::now();
+    let start: Instant = Instant::now();
     if let Err(e) = process_and_save(&args.input, &args.output, &args.column) {
         eprintln!("Error: {}", e);
     }
