@@ -15,6 +15,17 @@ pip install -r requirements.txt
 ```
 In a terminal window to install the required packages.
 
+## Preprocessor
+To compile preprocessor, run this in a terminal window in rust-preprocess folder
+```
+cargo build --release
+```
+
+To preprocess a file run this in a terminal window
+```
+./rust-preprocess/target/release/rust-preprocess.exe --input "./data/995,000_rows.csv" --output "./output/995,000_rows_processed.csv"
+```
+
 
 ## Task 1
 
