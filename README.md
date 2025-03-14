@@ -20,11 +20,13 @@ To compile preprocessor, run this in a terminal window in rust-preprocess folder
 ```
 cargo build --release
 ```
+This will take some time to compile
 
 To preprocess a file run this in a terminal window
 ```
 ./rust-preprocess/target/release/rust-preprocess.exe --input "./data/995,000_rows.csv" --output "./output/995,000_rows_processed.csv"
 ```
+Note: this creates alot of additional data, so make sure you have enough space
 
 
 ## Task 1
