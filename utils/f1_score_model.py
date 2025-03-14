@@ -1,7 +1,7 @@
-import code_pre_processor
+import deprecated_code_pre_processor
 import pandas as pd
 from collections import Counter
-import top10k
+import utils.top10k as top10k
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
@@ -11,8 +11,8 @@ from sklearn.metrics import f1_score
 word_list = top10k.get_top_words()
 
 # Reading csv files
-fake_csv_file = code_pre_processor.read_csv_file("fake_articles_sample.csv") 
-reliable_csv_file = code_pre_processor.read_csv_file("reliable_articles_sample.csv")      
+fake_csv_file = deprecated_code_pre_processor.read_csv_file("fake_articles_sample.csv") 
+reliable_csv_file = deprecated_code_pre_processor.read_csv_file("reliable_articles_sample.csv")      
 
 
 # Combined files
