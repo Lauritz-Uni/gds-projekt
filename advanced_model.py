@@ -13,7 +13,7 @@ train_words = [get_top_words(csv_data_train, content+'-tokens_stemmed')]
 test_words = [csv_data_test['content-tokens_stemmed']]
 val_words = [csv_data_val['content-tokens_stemmed']]
 
-#convert preprocessed text into TF-IDF weights/features, using the top 10.000 words
+#convert preprocessed text into TF-IDF weights/features, using top 10.000 words
 vectorizer = TfidfVectorizer(vocabulary=train_words) #No need for: stop_words='english' because data has been preprocessed already..
 tfidf_train = vectorizer.fit_transform("train_words") #fitting model on the training data split part AND transforming it to TF-IDF
 tfidf_test = vectorizer.transform("test_words") #just transforming the testing data split part into the same feature space (TF-IDF)
