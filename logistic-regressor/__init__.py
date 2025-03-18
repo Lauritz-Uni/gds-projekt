@@ -45,15 +45,13 @@ def train_logistic_regressor(train_csv, valid_csv, test_csv):
 
     print("[#] Fitting model...")
 
-    random_state = np.random.RandomState(1)
-
     # Train logistic regression model with optimized hyperparameters
     model = LogisticRegression(
         solver='lbfgs',
         penalty='l2',
         C=1.0,
         max_iter=1000,
-        random_state=random_state,
+        # random_state=42,
         verbose=True
     )
     model.fit(X_train, y_train)
