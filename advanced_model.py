@@ -1,10 +1,9 @@
 from sklearn.feature_extraction.text import TfidfVectorizer
-import code_pre_processor as cpp
-from sklearn.naive_bayes import MultinomialNB
+import deprecated_code_pre_processor as cpp
+from sklearn.naive_bayes import ComplementNB
 from sklearn.metrics import accuracy_score, classification_report
 import joblib
-from top10k import get_top_words
-from f1_score_model import categorize_reliable_or_fake
+from utils import get_top_words, categorize_reliable_or_fake
 
 #using the 10.000 list
 csv_data = cpp.read_csv_file('data/news_sample_processed.csv')
@@ -25,5 +24,5 @@ val_labels = csv_data_val["binary_type"].values
 
 
 #training the naive bayes classifier model!
-model = MultinomialNB() #Naive bayes classifier, multinomial version means based on word frequency counts hence TF-IDF scores
+model = ComplementNB() #Naive bayes classifier, multinomial version means based on word frequency counts hence TF-IDF scores
 model.fit(tfidf_train, "training_labels") #where tfidk_train is the transformed training set, and "training labels"
