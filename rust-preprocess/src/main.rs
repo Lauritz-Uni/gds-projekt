@@ -10,10 +10,11 @@ use std::error::Error;
 use std::sync::Mutex;  // For thread-safe progress bar updates
 use std::time::Instant;
 use clap::Parser;  // Command-line argument parsing
+use clap::ArgAction;
 // Additional imports for random shuffling and path manipulation
 use rand::seq::SliceRandom;
-use rand::thread_rng;
-use std::path::{Path, PathBuf};
+use rand::rng;
+use std::path::Path;
 
 // Define command-line arguments structure using clap
 #[derive(Parser, Debug)]
@@ -30,6 +31,10 @@ struct Args {
     /// Name of the column to process
     #[arg(short, long, default_value = "content")]
     column: String,
+
+    /// Keep processed data in the output CSV (if false, will not create example_processed.csv)
+    #[arg(short, long, action=ArgAction::SetTrue)]
+    keep_processed: bool,
 }
 
 // Compile regular expressions once using lazy initialization
@@ -126,7 +131,7 @@ fn clean_text(text: &str) -> (String, Vec<String>, Vec<String>, Vec<String>, Vec
                 .split_whitespace()
                 .map(|word: &str| {
                     // Preserve placeholder tokens
-                    if word.starts_with('<') && word.ends_with('>') {
+                    if word.starts_with('<') && word.ends_with('>') && (word.contains("DATE") || word.contains("EMAIL") || word.contains("URL") || word.contains("NUMBER")) {
                         word.to_string()
                     } else {
                         RE_PUNCT.replace_all(word, "").into_owned()
@@ -151,9 +156,12 @@ fn process_and_save(
     input_file: &str,
     output_file: &str,
     column_name: &str,
+    keep_processed: &bool
 ) -> Result<(), Box<dyn Error>> {
     let processing_start = Instant::now();
 
+
+    println!("Reading {output_file}!");
     // Read input CSV file
     let mut rdr = Reader::from_path(input_file)?;
     let records: Vec<_> = rdr.records().collect::<Result<_, _>>()?;
@@ -161,7 +169,6 @@ fn process_and_save(
     println!("Time taken to read data: {:.2?}", processing_start.elapsed());
 
     // Prepare output CSV writer with extended headers
-    let mut wtr = Writer::from_path(output_file)?;
     let mut headers = rdr.headers()?.clone();
     headers.push_field("dates");
     headers.push_field("emails");
@@ -170,7 +177,6 @@ fn process_and_save(
     headers.push_field(&(column_name.to_owned()+"-tokens"));
     headers.push_field(&(column_name.to_owned()+"-tokens_no_stop"));
     headers.push_field(&(column_name.to_owned()+"-tokens_stemmed"));
-    wtr.write_record(&headers)?;
 
     // Find index of the target column
     let column_index = headers
@@ -224,10 +230,30 @@ fn process_and_save(
             new_record
         })
         .collect();
+    
+
+    pb_mutex.lock().unwrap().finish_with_message("Done with file: {output_file}");
+    drop(pb_mutex);
+
+    // Write processed records to output CSV, if keep_processed is true
+    if *keep_processed {
+        if let Err(e) = std::fs::remove_file(output_file) {
+            eprintln!("Error removing file: {}", e);
+        }
+        let mut wtr = Writer::from_path(output_file)?;
+        wtr.write_record(&headers)?;
+        for record in &processed_records {
+            wtr.write_record(&*record)?;
+        }
+        wtr.flush()?;
+        drop(wtr);
+    }
+
+    println!("Time taken to process and write data: {:.2?}", processing_start.elapsed());
 
     // Shuffle records for random split
     let mut processed_records = processed_records;
-    let mut rng = thread_rng();
+    let mut rng = rng();
     processed_records.as_mut_slice().shuffle(&mut rng);
 
     // Calculate split sizes
@@ -241,41 +267,150 @@ fn process_and_save(
     let stem = output_path.file_stem()
         .unwrap_or_default()
         .to_str()
-        .unwrap_or("output");
+        .unwrap_or("./output");
     let extension = output_path.extension()
         .map(|e| e.to_str().unwrap_or("csv"))
         .unwrap_or("csv");
 
-        let train_path = output_path.with_file_name(format!("{}_train.{}", stem, extension));
-        let val_path = output_path.with_file_name(format!("{}_val.{}", stem, extension));
-        let test_path = output_path.with_file_name(format!("{}_test.{}", stem, extension));
+    let train_path = output_path.with_file_name(format!("{}_train.{}", stem, extension));
+    let val_path = output_path.with_file_name(format!("{}_val.{}", stem, extension));
+    let test_path = output_path.with_file_name(format!("{}_test.{}", stem, extension));
+
+    // Determine columns to exclude
+    let exclude_names = vec![
+        column_name.to_string(),
+        format!("{}-tokens", column_name),
+        format!("{}-tokens_no_stop", column_name),
+    ];
+
+    let exclude_indices: Vec<usize> = headers.iter()
+        .enumerate()
+        .filter(|(_, name)| exclude_names.contains(&name.to_string()))
+        .map(|(i, _)| i)
+        .collect();
+
+    let reliability_column = "type";
+    let reliability_col_index = headers.iter()
+        .position(|h| h == reliability_column)
+        .ok_or_else(|| format!("Column '{}' not found", reliability_column))?;
     
-        // Write training split
+    // Modified: Create filtered headers with type column
+    let mut filtered_header_fields: Vec<&str> = headers.iter()
+        .enumerate()
+        .filter(|(i, _)| !exclude_indices.contains(i))
+        .map(|(_, name)| name)
+        .collect();
+        filtered_header_fields.push("label"); // Add type column
+    let filtered_headers = csv::StringRecord::from(filtered_header_fields);
+
+    // Add a new progress bar for writing
+    let write_pb = ProgressBar::new(3);  // 3 splits
+    write_pb.set_style(ProgressStyle::default_bar()
+        .template("[Writing splits] {bar:40} {pos}/{len} ({eta_precise})")?);
+
+    // Write training split
+    {
         let mut train_wtr = Writer::from_path(train_path)?;
-        train_wtr.write_record(&headers)?;
+        train_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[0..train_size] {
-            train_wtr.write_record(record)?;
+            // Get reliability status from original record
+            let reliability_status = record.get(reliability_col_index).unwrap_or_default();
+            let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
+                "reliable"
+            } else {
+                "fake"
+            };
+
+            // Build filtered record
+            let mut filtered_record: Vec<&str> = record.iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude_indices.contains(i))
+                .map(|(_, field)| field)
+                .collect();
+            
+            // Append type column
+            filtered_record.push(type_label);
+            
+            train_wtr.write_record(&filtered_record)?;
         }
         train_wtr.flush()?;
-    
-        // Write validation split
+        drop(train_wtr);
+    }
+
+    write_pb.inc(1);
+
+    // Write validation split
+    {
+        if let Err(_e) = std::fs::remove_file(&val_path) {
+            // println!("Failed to remove file: {}", e);
+        }
         let mut val_wtr = Writer::from_path(val_path)?;
-        val_wtr.write_record(&headers)?;
+        val_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[train_size..train_size + val_size] {
-            val_wtr.write_record(record)?;
+            // Get reliability status from original record
+            let reliability_status = record.get(reliability_col_index).unwrap_or_default();
+            let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
+                "reliable"
+            } else {
+                "fake"
+            };
+
+            let mut filtered_record: Vec<&str> = record.iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude_indices.contains(i))
+                .map(|(_, field)| field)
+                .collect();
+            
+            // Append type column
+            filtered_record.push(type_label);
+
+            val_wtr.write_record(&filtered_record)?;
         }
         val_wtr.flush()?;
-    
-        // Write test split
+        drop(val_wtr);
+    }
+
+    write_pb.inc(1);
+
+    // Write test split
+    {
+        if let Err(_e) = std::fs::remove_file(&test_path) {
+            // println!("Failed to remove file: {}", e);
+        }
         let mut test_wtr = Writer::from_path(test_path)?;
-        test_wtr.write_record(&headers)?;
+        test_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[train_size + val_size..] {
-            test_wtr.write_record(record)?;
+            // Get reliability status from original record
+            let reliability_status = record.get(reliability_col_index).unwrap_or_default();
+            let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
+                "reliable"
+            } else {
+                "fake"
+            };
+
+            let mut filtered_record: Vec<&str> = record.iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude_indices.contains(i))
+                .map(|(_, field)| field)
+                .collect();
+            
+            // Append type column
+            filtered_record.push(type_label);
+
+            test_wtr.write_record(&filtered_record)?;
         }
         test_wtr.flush()?;
+        drop(test_wtr);
+    }
+
+    write_pb.inc(1);
+
+    write_pb.finish_and_clear();
+
+    drop(processed_records);
+    drop(write_pb);
+    println!("Files successfully closed");
     
-    pb_mutex.lock().unwrap().finish_with_message("Done with file: {output_file}");
-    wtr.flush()?;
     println!("Total processing time: {:.2?}", processing_start.elapsed());
     Ok(())
 }
@@ -285,8 +420,14 @@ fn main() {
     let args = Args::parse();
     
     let start = Instant::now();
-    if let Err(e) = process_and_save(&args.input, &args.output, &args.column) {
+    println!("Processing Started!");
+
+    if args.keep_processed {
+        println!("Keeping processed files...");
+    }
+
+    if let Err(e) = process_and_save(&args.input, &args.output, &args.column, &args.keep_processed) {
         eprintln!("Error: {}", e);
     }
-    println!("Total time: {:.2?}", start.elapsed());
+    println!("Processing Done! Total time: {:.2?}", start.elapsed());
 }
