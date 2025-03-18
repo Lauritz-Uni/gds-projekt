@@ -7,7 +7,7 @@ from utils.top10k import get_top_words
 
 print("Loading data...")
 
-#using the 10.000 list
+#load data for all three splits
 csv_data_train = cpp.read_csv_file('output/995,000_rows_processed_train.csv')
 csv_data_test = cpp.read_csv_file('output/995,000_rows_processed_test.csv')
 csv_data_val = cpp.read_csv_file('output/995,000_rows_processed_val.csv')
@@ -16,7 +16,7 @@ print("Data loaded")
 
 print("Preprocessing data...")
 
-train_words = [get_top_words(csv_data_test, 'content-tokens_stemmed')]
+train_words = [get_top_words(csv_data_train, 'content-tokens_stemmed')]
 test_words = [csv_data_test['content-tokens_stemmed']]
 val_words = [csv_data_val['content-tokens_stemmed']]
 
