@@ -74,8 +74,7 @@ def read_csv_file(file_path: str, column='content') -> pd.DataFrame:
             for col in COLUMNS:
                 csv_data[column+col] = csv_data[column+col].apply(ast.literal_eval)
         except KeyError:
-            print("# No processed data found in the csv file")
-            return None
+            print("# No processed data found in the csv file, ignoring...")
         return csv_data
 
 # ======================
