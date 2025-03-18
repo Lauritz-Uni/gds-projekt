@@ -186,9 +186,9 @@ class TextProcessor:
         """Apply Porter stemming to tokens"""
         return [t if t in PLACEHOLDERS.values() else self.stemmer.stem(t) for t in tokens]
     
-    # ======================
+    # =====================
     # Full Pipeline
-    # ======================
+    # =====================
 
     def full_pipeline(self, file_path: str, target_column: str, out_path=None, chunk_size = None) -> pd.DataFrame:
         """Run full text processing pipeline on the given file and column"""
