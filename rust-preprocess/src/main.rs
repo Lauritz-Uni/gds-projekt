@@ -37,6 +37,24 @@ struct Args {
     keep_processed: bool,
 }
 
+fn format_numbers_preserving_format(s: &str) -> String {
+    s.split(';')
+        .map(|part| {
+            part.trim()
+                .parse::<f64>()
+                .map(|n| {
+                    if n.fract() == 0.0 {
+                        format!("{:.0}", n) // Integer format
+                    } else {
+                        n.to_string() // Keep original float
+                    }
+                })
+                .unwrap_or_else(|_| part.to_string()) // Non-numeric values
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 // Compile regular expressions once using lazy initialization
 static RE_COMBINED: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?xi)
@@ -161,11 +179,11 @@ fn process_and_save(
     let processing_start = Instant::now();
 
 
-    println!("Reading {output_file}!");
+    println!("Reading {input_file}!");
     // Read input CSV file
     let mut rdr = Reader::from_path(input_file)?;
-    let records: Vec<_> = rdr.records().collect::<Result<_, _>>()?;
-    let total_records = records.len();
+    let string_records: Vec<csv::StringRecord> = rdr.records().collect::<Result<_, _>>()?;
+    let total_records = string_records.len();
     println!("Time taken to read data: {:.2?}", processing_start.elapsed());
 
     // Prepare output CSV writer with extended headers
@@ -198,7 +216,7 @@ fn process_and_save(
     let pb_mutex = Mutex::new(pb);
 
     // Process records in parallel using Rayon
-    let processed_records: Vec<_> = records
+    let processed_records: Vec<_> = string_records
         .par_iter()
         .map(|record| {
             let content = record.get(column_index).unwrap_or("");
@@ -216,10 +234,18 @@ fn process_and_save(
 
             // Build enhanced output record
             let mut new_record = record.clone();
-            new_record.push_field(&dates.join("; "));
-            new_record.push_field(&emails.join("; "));
-            new_record.push_field(&urls.join("; "));
-            new_record.push_field(&numbers.join("; "));
+            new_record.push_field(&format_numbers_preserving_format(
+                &dates.join("; ")
+            ));
+            new_record.push_field(&format_numbers_preserving_format(
+                &emails.join("; ")
+            ));
+            new_record.push_field(&format_numbers_preserving_format(
+                &urls.join("; ")
+            ));
+            new_record.push_field(&format_numbers_preserving_format(
+                &numbers.join("; ")
+            ));
             new_record.push_field(&tokens.join(" "));
             new_record.push_field(&filtered.join(" "));
             new_record.push_field(&stemmed);
@@ -231,9 +257,10 @@ fn process_and_save(
         })
         .collect();
     
+    drop(rdr);
+    drop(string_records);
 
     pb_mutex.lock().unwrap().finish_with_message("Done with file: {output_file}");
-    drop(pb_mutex);
 
     // Write processed records to output CSV, if keep_processed is true
     if *keep_processed {
@@ -249,7 +276,7 @@ fn process_and_save(
         drop(wtr);
     }
 
-    println!("Time taken to process and write data: {:.2?}", processing_start.elapsed());
+    println!("Time taken to process (and maybe write data): {:.2?}", processing_start.elapsed());
 
     // Shuffle records for random split
     let mut processed_records = processed_records;
@@ -313,7 +340,7 @@ fn process_and_save(
         let mut train_wtr = Writer::from_path(train_path)?;
         train_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[0..train_size] {
-            // Get reliability status from original record
+            // Get type from original record
             let reliability_status = record.get(reliability_col_index).unwrap_or_default();
             let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
                 "reliable"
@@ -347,7 +374,7 @@ fn process_and_save(
         let mut val_wtr = Writer::from_path(val_path)?;
         val_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[train_size..train_size + val_size] {
-            // Get reliability status from original record
+            // Get type status from original record
             let reliability_status = record.get(reliability_col_index).unwrap_or_default();
             let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
                 "reliable"
@@ -380,7 +407,7 @@ fn process_and_save(
         let mut test_wtr = Writer::from_path(test_path)?;
         test_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[train_size + val_size..] {
-            // Get reliability status from original record
+            // Get type status from original record
             let reliability_status = record.get(reliability_col_index).unwrap_or_default();
             let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
                 "reliable"
@@ -405,10 +432,8 @@ fn process_and_save(
 
     write_pb.inc(1);
 
-    write_pb.finish_and_clear();
+    write_pb.finish_with_message("Finished writing splits");
 
-    drop(processed_records);
-    drop(write_pb);
     println!("Files successfully closed");
     
     println!("Total processing time: {:.2?}", processing_start.elapsed());
