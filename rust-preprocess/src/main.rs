@@ -83,7 +83,8 @@ static RE_COMBINED: Lazy<Regex> = Lazy::new(|| {
 });
 
 // Regex for punctuation removal (keeping letters, spaces, and slashes)
-static RE_PUNCT: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z\s/]").unwrap());
+static RE_PUNCT: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z]").unwrap());
+static RE_UNUSED: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z <>]").unwrap());
 // Regex for normalizing whitespace
 static RE_WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 
@@ -142,10 +143,16 @@ fn clean_text(text: &str) -> (String, Vec<String>, Vec<String>, Vec<String>, Vec
         }
     }).to_string();
 
+
+    let text_no_unused: String = RE_UNUSED
+        .replace_all(&cleaned_text, " ")
+        .to_string();
+    
+
     // Second pass: Clean punctuation and normalize whitespace
     let cleaned_text: String = RE_WHITESPACE
         .replace_all(
-            &cleaned_text
+            &text_no_unused
                 .split_whitespace()
                 .map(|word: &str| {
                     // Preserve placeholder tokens
@@ -217,8 +224,8 @@ fn process_and_save(
 
     // Process records in parallel using Rayon
     let processed_records: Vec<_> = string_records
-        .par_iter()
-        .map(|record| {
+    .par_iter()
+        .filter_map(|record| {
             let content = record.get(column_index).unwrap_or("");
             
             // Clean text and extract entities
@@ -231,6 +238,14 @@ fn process_and_save(
                 .map(|word| en_stemmer.stem(word).to_string())
                 .collect::<Vec<_>>()
                 .join(" ");
+
+            // Update progress bar for each processed record
+            pb_mutex.lock().unwrap().inc(1);
+
+            // Skip records with empty stemmed
+            if stemmed.is_empty() {
+                return None;
+            }
 
             // Build enhanced output record
             let mut new_record = record.clone();
@@ -250,10 +265,7 @@ fn process_and_save(
             new_record.push_field(&filtered.join(" "));
             new_record.push_field(&stemmed);
             
-            // Update progress bar
-            pb_mutex.lock().unwrap().inc(1);
-            
-            new_record
+            Some(new_record)
         })
         .collect();
     
