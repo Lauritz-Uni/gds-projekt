@@ -10,10 +10,11 @@ use std::error::Error;
 use std::sync::Mutex;  // For thread-safe progress bar updates
 use std::time::Instant;
 use clap::Parser;  // Command-line argument parsing
+use clap::ArgAction;
 // Additional imports for random shuffling and path manipulation
 use rand::seq::SliceRandom;
-use rand::thread_rng;
-use std::path::{Path, PathBuf};
+use rand::rng;
+use std::path::Path;
 
 // Define command-line arguments structure using clap
 #[derive(Parser, Debug)]
@@ -30,6 +31,28 @@ struct Args {
     /// Name of the column to process
     #[arg(short, long, default_value = "content")]
     column: String,
+
+    /// Keep processed data in the output CSV (if false, will not create example_processed.csv)
+    #[arg(short, long, action=ArgAction::SetTrue)]
+    keep_processed: bool,
+}
+
+fn format_numbers_preserving_format(s: &str) -> String {
+    s.split(';')
+        .map(|part| {
+            part.trim()
+                .parse::<f64>()
+                .map(|n| {
+                    if n.fract() == 0.0 {
+                        format!("{:.0}", n) // Integer format
+                    } else {
+                        n.to_string() // Keep original float
+                    }
+                })
+                .unwrap_or_else(|_| part.to_string()) // Non-numeric values
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 // Compile regular expressions once using lazy initialization
@@ -60,7 +83,8 @@ static RE_COMBINED: Lazy<Regex> = Lazy::new(|| {
 });
 
 // Regex for punctuation removal (keeping letters, spaces, and slashes)
-static RE_PUNCT: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z\s/]").unwrap());
+static RE_PUNCT: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z]").unwrap());
+static RE_UNUSED: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z <>]").unwrap());
 // Regex for normalizing whitespace
 static RE_WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 
@@ -119,14 +143,20 @@ fn clean_text(text: &str) -> (String, Vec<String>, Vec<String>, Vec<String>, Vec
         }
     }).to_string();
 
+
+    let text_no_unused: String = RE_UNUSED
+        .replace_all(&cleaned_text, " ")
+        .to_string();
+    
+
     // Second pass: Clean punctuation and normalize whitespace
     let cleaned_text: String = RE_WHITESPACE
         .replace_all(
-            &cleaned_text
+            &text_no_unused
                 .split_whitespace()
                 .map(|word: &str| {
                     // Preserve placeholder tokens
-                    if word.starts_with('<') && word.ends_with('>') {
+                    if word.starts_with('<') && word.ends_with('>') && (word.contains("DATE") || word.contains("EMAIL") || word.contains("URL") || word.contains("NUMBER")) {
                         word.to_string()
                     } else {
                         RE_PUNCT.replace_all(word, "").into_owned()
@@ -151,17 +181,19 @@ fn process_and_save(
     input_file: &str,
     output_file: &str,
     column_name: &str,
+    keep_processed: &bool
 ) -> Result<(), Box<dyn Error>> {
     let processing_start = Instant::now();
 
+
+    println!("Reading {input_file}!");
     // Read input CSV file
     let mut rdr = Reader::from_path(input_file)?;
-    let records: Vec<_> = rdr.records().collect::<Result<_, _>>()?;
-    let total_records = records.len();
+    let string_records: Vec<csv::StringRecord> = rdr.records().collect::<Result<_, _>>()?;
+    let total_records = string_records.len();
     println!("Time taken to read data: {:.2?}", processing_start.elapsed());
 
     // Prepare output CSV writer with extended headers
-    let mut wtr = Writer::from_path(output_file)?;
     let mut headers = rdr.headers()?.clone();
     headers.push_field("dates");
     headers.push_field("emails");
@@ -170,7 +202,6 @@ fn process_and_save(
     headers.push_field(&(column_name.to_owned()+"-tokens"));
     headers.push_field(&(column_name.to_owned()+"-tokens_no_stop"));
     headers.push_field(&(column_name.to_owned()+"-tokens_stemmed"));
-    wtr.write_record(&headers)?;
 
     // Find index of the target column
     let column_index = headers
@@ -192,9 +223,9 @@ fn process_and_save(
     let pb_mutex = Mutex::new(pb);
 
     // Process records in parallel using Rayon
-    let processed_records: Vec<_> = records
-        .par_iter()
-        .map(|record| {
+    let processed_records: Vec<_> = string_records
+    .par_iter()
+        .filter_map(|record| {
             let content = record.get(column_index).unwrap_or("");
             
             // Clean text and extract entities
@@ -208,26 +239,60 @@ fn process_and_save(
                 .collect::<Vec<_>>()
                 .join(" ");
 
+            // Update progress bar for each processed record
+            pb_mutex.lock().unwrap().inc(1);
+
+            // Skip records with empty stemmed
+            if stemmed.is_empty() {
+                return None;
+            }
+
             // Build enhanced output record
             let mut new_record = record.clone();
-            new_record.push_field(&dates.join("; "));
-            new_record.push_field(&emails.join("; "));
-            new_record.push_field(&urls.join("; "));
-            new_record.push_field(&numbers.join("; "));
+            new_record.push_field(&format_numbers_preserving_format(
+                &dates.join("; ")
+            ));
+            new_record.push_field(&format_numbers_preserving_format(
+                &emails.join("; ")
+            ));
+            new_record.push_field(&format_numbers_preserving_format(
+                &urls.join("; ")
+            ));
+            new_record.push_field(&format_numbers_preserving_format(
+                &numbers.join("; ")
+            ));
             new_record.push_field(&tokens.join(" "));
             new_record.push_field(&filtered.join(" "));
             new_record.push_field(&stemmed);
             
-            // Update progress bar
-            pb_mutex.lock().unwrap().inc(1);
-            
-            new_record
+            Some(new_record)
         })
         .collect();
+    
+    drop(rdr);
+    drop(string_records);
+
+    pb_mutex.lock().unwrap().finish_with_message("Done with file: {output_file}");
+
+    // Write processed records to output CSV, if keep_processed is true
+    if *keep_processed {
+        if let Err(e) = std::fs::remove_file(output_file) {
+            eprintln!("Error removing file: {}", e);
+        }
+        let mut wtr = Writer::from_path(output_file)?;
+        wtr.write_record(&headers)?;
+        for record in &processed_records {
+            wtr.write_record(&*record)?;
+        }
+        wtr.flush()?;
+        drop(wtr);
+    }
+
+    println!("Time taken to process (and maybe write data): {:.2?}", processing_start.elapsed());
 
     // Shuffle records for random split
     let mut processed_records = processed_records;
-    let mut rng = thread_rng();
+    let mut rng = rng();
     processed_records.as_mut_slice().shuffle(&mut rng);
 
     // Calculate split sizes
@@ -241,41 +306,148 @@ fn process_and_save(
     let stem = output_path.file_stem()
         .unwrap_or_default()
         .to_str()
-        .unwrap_or("output");
+        .unwrap_or("./output");
     let extension = output_path.extension()
         .map(|e| e.to_str().unwrap_or("csv"))
         .unwrap_or("csv");
 
-        let train_path = output_path.with_file_name(format!("{}_train.{}", stem, extension));
-        let val_path = output_path.with_file_name(format!("{}_val.{}", stem, extension));
-        let test_path = output_path.with_file_name(format!("{}_test.{}", stem, extension));
+    let train_path = output_path.with_file_name(format!("{}_train.{}", stem, extension));
+    let val_path = output_path.with_file_name(format!("{}_val.{}", stem, extension));
+    let test_path = output_path.with_file_name(format!("{}_test.{}", stem, extension));
+
+    // Determine columns to exclude
+    let exclude_names = vec![
+        column_name.to_string(),
+        format!("{}-tokens", column_name),
+        format!("{}-tokens_no_stop", column_name),
+    ];
+
+    let exclude_indices: Vec<usize> = headers.iter()
+        .enumerate()
+        .filter(|(_, name)| exclude_names.contains(&name.to_string()))
+        .map(|(i, _)| i)
+        .collect();
+
+    let reliability_column = "type";
+    let reliability_col_index = headers.iter()
+        .position(|h| h == reliability_column)
+        .ok_or_else(|| format!("Column '{}' not found", reliability_column))?;
     
-        // Write training split
+    // Modified: Create filtered headers with type column
+    let mut filtered_header_fields: Vec<&str> = headers.iter()
+        .enumerate()
+        .filter(|(i, _)| !exclude_indices.contains(i))
+        .map(|(_, name)| name)
+        .collect();
+        filtered_header_fields.push("label"); // Add type column
+    let filtered_headers = csv::StringRecord::from(filtered_header_fields);
+
+    // Add a new progress bar for writing
+    let write_pb = ProgressBar::new(3);  // 3 splits
+    write_pb.set_style(ProgressStyle::default_bar()
+        .template("[Writing splits] {bar:40} {pos}/{len} ({eta_precise})")?);
+
+    // Write training split
+    {
         let mut train_wtr = Writer::from_path(train_path)?;
-        train_wtr.write_record(&headers)?;
+        train_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[0..train_size] {
-            train_wtr.write_record(record)?;
+            // Get type from original record
+            let reliability_status = record.get(reliability_col_index).unwrap_or_default();
+            let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
+                "reliable"
+            } else {
+                "fake"
+            };
+
+            // Build filtered record
+            let mut filtered_record: Vec<&str> = record.iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude_indices.contains(i))
+                .map(|(_, field)| field)
+                .collect();
+            
+            // Append type column
+            filtered_record.push(type_label);
+            
+            train_wtr.write_record(&filtered_record)?;
         }
         train_wtr.flush()?;
-    
-        // Write validation split
+        drop(train_wtr);
+    }
+
+    write_pb.inc(1);
+
+    // Write validation split
+    {
+        if let Err(_e) = std::fs::remove_file(&val_path) {
+            // println!("Failed to remove file: {}", e);
+        }
         let mut val_wtr = Writer::from_path(val_path)?;
-        val_wtr.write_record(&headers)?;
+        val_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[train_size..train_size + val_size] {
-            val_wtr.write_record(record)?;
+            // Get type status from original record
+            let reliability_status = record.get(reliability_col_index).unwrap_or_default();
+            let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
+                "reliable"
+            } else {
+                "fake"
+            };
+
+            let mut filtered_record: Vec<&str> = record.iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude_indices.contains(i))
+                .map(|(_, field)| field)
+                .collect();
+            
+            // Append type column
+            filtered_record.push(type_label);
+
+            val_wtr.write_record(&filtered_record)?;
         }
         val_wtr.flush()?;
-    
-        // Write test split
+        drop(val_wtr);
+    }
+
+    write_pb.inc(1);
+
+    // Write test split
+    {
+        if let Err(_e) = std::fs::remove_file(&test_path) {
+            // println!("Failed to remove file: {}", e);
+        }
         let mut test_wtr = Writer::from_path(test_path)?;
-        test_wtr.write_record(&headers)?;
+        test_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[train_size + val_size..] {
-            test_wtr.write_record(record)?;
+            // Get type status from original record
+            let reliability_status = record.get(reliability_col_index).unwrap_or_default();
+            let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
+                "reliable"
+            } else {
+                "fake"
+            };
+
+            let mut filtered_record: Vec<&str> = record.iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude_indices.contains(i))
+                .map(|(_, field)| field)
+                .collect();
+            
+            // Append type column
+            filtered_record.push(type_label);
+
+            test_wtr.write_record(&filtered_record)?;
         }
         test_wtr.flush()?;
+        drop(test_wtr);
+    }
+
+    write_pb.inc(1);
+
+    write_pb.finish_with_message("Finished writing splits");
+
+    println!("Files successfully closed");
     
-    pb_mutex.lock().unwrap().finish_with_message("Done with file: {output_file}");
-    wtr.flush()?;
     println!("Total processing time: {:.2?}", processing_start.elapsed());
     Ok(())
 }
@@ -285,8 +457,14 @@ fn main() {
     let args = Args::parse();
     
     let start = Instant::now();
-    if let Err(e) = process_and_save(&args.input, &args.output, &args.column) {
+    println!("Processing Started!");
+
+    if args.keep_processed {
+        println!("Keeping processed files...");
+    }
+
+    if let Err(e) = process_and_save(&args.input, &args.output, &args.column, &args.keep_processed) {
         eprintln!("Error: {}", e);
     }
-    println!("Total time: {:.2?}", start.elapsed());
+    println!("Processing Done! Total time: {:.2?}", start.elapsed());
 }
