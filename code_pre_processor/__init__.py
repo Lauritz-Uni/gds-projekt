@@ -209,6 +209,9 @@ class TextProcessor:
             df[f"{target_column}-tokens_no_stop"] = df[f"{target_column}-tokens"].apply(self.remove_stopwords)
             df[f"{target_column}-tokens_stemmed"] = df[f"{target_column}-tokens_no_stop"].apply(self.stem_tokens)
             print(f"[!] Completed text processing in {time.time() - text_start_time:.2f}s")
+            if out_path:
+                print("saving to csv file")
+                df.to_csv(out_path, index=1)
         else:
             # Chunked processing
             print(f"[#] Reading and processing in chunks of {chunk_size}")
