@@ -1,29 +1,84 @@
+import time
+start_time = time.time() #Starting timer
+print("Program started")
+
+import sys
+sys.path.append(".")
+#import scipy.sparse
+import modin.pandas as pd
+import dask.dataframe as dd
 from sklearn.feature_extraction.text import TfidfVectorizer
-import code_pre_processor as cpp
-from sklearn.naive_bayes import MultinomialNB
+from pandarallel import pandarallel
+from sklearn.naive_bayes import ComplementNB
 from sklearn.metrics import accuracy_score, classification_report
-import joblib
-from top10k import get_top_words
-from f1_score_model import categorize_reliable_or_fake
 
-#using the 10.000 list
-csv_data = cpp.read_csv_file('data/news_sample_processed.csv')
-top_words = [get_top_words(csv_data)[:10000]]
+print("test")
 
-#convert preprocessed text into TF-IDF weights/features, using the top 10.000 words
-vectorizer = TfidfVectorizer(vocabulary=top_words) #No need for: stop_words='english' because data has been preprocessed already..
-tfidf_train = vectorizer.fit_transform("training_data") #fitting model on the training data split part AND transforming it to TF-IDF
-tfidf_test = vectorizer.transform("testing_data") #just transforming the testing data split part into the same feature space (TF-IDF)
-tfidf_val = vectorizer.transform("validation_data") #transforming the validation data split part into the same feature space (TF-IDF)
+from utils.f1_score_model import categorize_reliable_or_fake
 
-#applying the categorize_reliable_or_fake function to the type column of the csv_data to extract all labels
-csv_data["binary_type"] = csv_data["type"].apply(categorize_reliable_or_fake)
+print("test")
+start_time = time.time() #Starting timer
 
-training_labels = csv_data_train["binary_type"].values
-test_labels = csv_data_test["binary_type"].values
-val_labels = csv_data_val["binary_type"].values
+pandarallel.initialize(progress_bar=True, nb_workers=4)
 
+print("Pandarrell initialized, reading files")
 
-#training the naive bayes classifier model!
-model = MultinomialNB() #Naive bayes classifier, multinomial version means based on word frequency counts hence TF-IDF scores
-model.fit(tfidf_train, "training_labels") #where tfidk_train is the transformed training set, and "training labels"
+#reading files with dask
+train_data = dd.read_csv('output/reduced_train.csv', usecols=["label", "content-tokens_stemmed"])
+test_data = dd.read_csv('output/reduced_test.csv', usecols=["label", "content-tokens_stemmed"])
+val_data = dd.read_csv('output/reduced_val.csv', usecols=["label", "content-tokens_stemmed"])
+
+print("files read")
+
+print("Converting to pandas dataframe")
+
+# Convert to Pandas
+train_data = train_data.compute()
+test_data = test_data.compute()
+val_data = val_data.compute()
+
+# Convert preprocessed text into TF-IDF features
+vectorizer = TfidfVectorizer(max_features=50_000)
+
+print("applying vectorizor")
+
+tfidf_train = vectorizer.fit_transform(train_data['content-tokens_stemmed'].astype(str))
+tfidf_test = vectorizer.transform(test_data["content-tokens_stemmed"].astype(str))
+tfidf_val = vectorizer.transform(val_data["content-tokens_stemmed"].astype(str))
+
+print("assignming labels")
+
+# Parallelize label assignment
+train_data["binary_type"] = train_data["label"].parallel_apply(categorize_reliable_or_fake)
+test_data["binary_type"] = test_data["label"].parallel_apply(categorize_reliable_or_fake)
+val_data["binary_type"] = val_data["label"].parallel_apply(categorize_reliable_or_fake)
+
+print("Done with assigning labels, converting labels to numpy arrays")
+
+# Convert labels to numpy arrays
+training_labels = train_data["binary_type"].to_numpy()
+test_labels = test_data["binary_type"].to_numpy()
+val_labels = val_data["binary_type"].to_numpy()
+
+print("Training Model")
+
+# Train Naive Bayes Classifier
+model = ComplementNB()
+model.fit(tfidf_train, training_labels)
+
+print("Predicting values")
+
+# Test Model
+test_pred = model.predict(tfidf_test)
+train_pred = model.predict(tfidf_train)
+
+print("evaluating model")
+
+# Evaluate Model
+print(f"Model Accuracy for training data: {accuracy_score(training_labels, train_pred) * 100:.2f} %")
+print(f"Model Accuracy for test data: {accuracy_score(test_labels, test_pred) * 100:.2f} %")
+print(f"Model Report:\n\n{classification_report(test_labels, test_pred)}")
+
+end_time = time.time() #ending timer
+elapsed_time = end_time - start_time
+print(f"Script execution time: {elapsed_time:.2f} seconds")
