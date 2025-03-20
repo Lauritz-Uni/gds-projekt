@@ -7,7 +7,6 @@ use rayon::prelude::*;  // Parallel processing utilities
 use regex::Regex;
 use rust_stemmers::{Algorithm, Stemmer};  // Stemming functionality
 use std::error::Error;
-use std::sync::Mutex;  // For thread-safe progress bar updates
 use std::time::Instant;
 use clap::Parser;  // Command-line argument parsing
 use clap::ArgAction;
@@ -15,6 +14,7 @@ use clap::ArgAction;
 use rand::seq::SliceRandom;
 use rand::rng;
 use std::path::Path;
+use std::sync::Arc;
 
 // Define command-line arguments structure using clap
 #[derive(Parser, Debug)]
@@ -35,24 +35,6 @@ struct Args {
     /// Keep processed data in the output CSV (if false, will not create example_processed.csv)
     #[arg(short, long, action=ArgAction::SetTrue)]
     keep_processed: bool,
-}
-
-fn format_numbers_preserving_format(s: &str) -> String {
-    s.split(';')
-        .map(|part| {
-            part.trim()
-                .parse::<f64>()
-                .map(|n| {
-                    if n.fract() == 0.0 {
-                        format!("{:.0}", n) // Integer format
-                    } else {
-                        n.to_string() // Keep original float
-                    }
-                })
-                .unwrap_or_else(|_| part.to_string()) // Non-numeric values
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
 }
 
 // Compile regular expressions once using lazy initialization
@@ -82,23 +64,23 @@ static RE_COMBINED: Lazy<Regex> = Lazy::new(|| {
     "#).expect("Failed to compile regex")
 });
 
-// Regex for punctuation removal (keeping letters, spaces, and slashes)
-static RE_PUNCT: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z]").unwrap());
+// Regex for punctuation removal (keeping letters, spaces, and angle brackets)
 static RE_UNUSED: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^a-zA-Z <>]").unwrap());
 // Regex for normalizing whitespace
 static RE_WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 
+const STOPWORDS: &str = include_str!("../stopwords.txt");
 /// Load stopwords from a file into a hash set
-fn load_stopwords(file_path: &str) -> Result<FxHashSet<String>, Box<dyn Error>> {
-    Ok(std::fs::read_to_string(file_path)?
+fn load_stopwords() -> Result<FxHashSet<String>, Box<dyn Error>> {
+    Ok(STOPWORDS
         .lines()
-        .map(|s: &str| s.to_lowercase())
+        .map(|s| s.trim().to_lowercase())
         .collect())
 }
 
 /// Split text into individual tokens (words)
 fn tokenize(content: &str) -> Vec<String> {
-    content.split_whitespace()
+    content.split_ascii_whitespace()
         .map(|s: &str| s.to_string())
         .collect()
 }
@@ -106,8 +88,33 @@ fn tokenize(content: &str) -> Vec<String> {
 /// Remove stopwords from a list of tokens
 fn remove_stopwords(tokens: Vec<String>, stopwords: &FxHashSet<String>) -> Vec<String> {
     tokens.into_iter()
-        .filter(|word| !stopwords.contains(&word.to_lowercase()))
+        .filter(|word| {
+            // Skip placeholder tokens and check lowercase for others
+            if word.starts_with('<') && word.ends_with('>') {
+                true
+            } else {
+                !stopwords.contains(word)
+            }
+        })
         .collect()
+}
+
+fn format_numbers_preserving_format(s: &str) -> String {
+    s.split(';')
+        .map(|part| {
+            part.trim()
+                .parse::<f64>()
+                .map(|n| {
+                    if n.fract() == 0.0 {
+                        format!("{:.0}", n) // Integer format
+                    } else {
+                        n.to_string() // Keep original float
+                    }
+                })
+                .unwrap_or_else(|_| part.to_string()) // Non-numeric values
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Clean and process text with multiple steps:
@@ -118,24 +125,22 @@ fn remove_stopwords(tokens: Vec<String>, stopwords: &FxHashSet<String>) -> Vec<S
 fn clean_text(text: &str) -> (String, Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
     let text = text.to_lowercase();
     
-    // Vectors to store extracted entities
     let mut dates = Vec::new();
     let mut emails = Vec::new();
     let mut urls = Vec::new();
     let mut numbers = Vec::new();
 
-    // First pass: Extract entities and replace with placeholders
     let cleaned_text = RE_COMBINED.replace_all(&text, |caps: &regex::Captures<'_>| {
-        if let Some(m) = caps.get(1) { // Date
+        if let Some(m) = caps.get(1) {
             dates.push(m.as_str().to_string());
             " <DATE> "
-        } else if let Some(m) = caps.get(2) { // Email
+        } else if let Some(m) = caps.get(2) {
             emails.push(m.as_str().to_string());
             " <EMAIL> "
-        } else if let Some(m) = caps.get(3) { // URL
+        } else if let Some(m) = caps.get(3) {
             urls.push(m.as_str().to_string());
             " <URL> "
-        } else if let Some(m) = caps.get(4) { // Number
+        } else if let Some(m) = caps.get(4) {
             numbers.push(m.as_str().to_string());
             " <NUMBER> "
         } else {
@@ -143,34 +148,15 @@ fn clean_text(text: &str) -> (String, Vec<String>, Vec<String>, Vec<String>, Vec
         }
     }).to_string();
 
-
-    let text_no_unused: String = RE_UNUSED
-        .replace_all(&cleaned_text, " ")
-        .to_string();
-    
-
-    // Second pass: Clean punctuation and normalize whitespace
-    let cleaned_text: String = RE_WHITESPACE
+    let cleaned = RE_WHITESPACE
         .replace_all(
-            &text_no_unused
-                .split_whitespace()
-                .map(|word: &str| {
-                    // Preserve placeholder tokens
-                    if word.starts_with('<') && word.ends_with('>') && (word.contains("DATE") || word.contains("EMAIL") || word.contains("URL") || word.contains("NUMBER")) {
-                        word.to_string()
-                    } else {
-                        RE_PUNCT.replace_all(word, "").into_owned()
-                    }
-                })
-                .filter(|s: &String| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join(" "),
-            " ",
+            &RE_UNUSED.replace_all(&cleaned_text, " "),
+            " "
         )
         .trim()
         .to_string();
 
-    (cleaned_text, dates, emails, urls, numbers)
+    (cleaned, dates, emails, urls, numbers)
 }
 
 /// Main processing function that handles:
@@ -193,6 +179,7 @@ fn process_and_save(
     let total_records = string_records.len();
     println!("Time taken to read data: {:.2?}", processing_start.elapsed());
 
+    let process_records_start = Instant::now();
     // Prepare output CSV writer with extended headers
     let mut headers = rdr.headers()?.clone();
     headers.push_field("dates");
@@ -210,17 +197,16 @@ fn process_and_save(
         .ok_or_else(|| format!("Column '{}' not found", column_name))?;
 
     // Load resources needed for processing
-    let stopwords = load_stopwords("stopwords.txt")?;
+    let stopwords = load_stopwords()?;
     let en_stemmer = Stemmer::create(Algorithm::English);
     
     // Setup progress bar with thread-safe wrapper
-    let pb = ProgressBar::new(total_records as u64);
+    let pb = Arc::new(ProgressBar::new(total_records as u64));
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40} {pos}/{len} ({percent}%) ETA: {eta_precise}")?
             .progress_chars("##-"),
     );
-    let pb_mutex = Mutex::new(pb);
 
     // Process records in parallel using Rayon
     let processed_records: Vec<_> = string_records
@@ -240,7 +226,7 @@ fn process_and_save(
                 .join(" ");
 
             // Update progress bar for each processed record
-            pb_mutex.lock().unwrap().inc(1);
+            pb.inc(1);
 
             // Skip records with empty stemmed
             if stemmed.is_empty() {
@@ -272,10 +258,12 @@ fn process_and_save(
     drop(rdr);
     drop(string_records);
 
-    pb_mutex.lock().unwrap().finish_with_message("Done with file: {output_file}");
+    pb.finish_with_message("Done processing");
+    println!("Time taken to process data: {:.2?}", process_records_start.elapsed());
 
     // Write processed records to output CSV, if keep_processed is true
     if *keep_processed {
+        let write_start = Instant::now();
         if let Err(e) = std::fs::remove_file(output_file) {
             eprintln!("Error removing file: {}", e);
         }
@@ -286,9 +274,8 @@ fn process_and_save(
         }
         wtr.flush()?;
         drop(wtr);
+        println!("Time taken to write data: {:.2?}", write_start.elapsed());
     }
-
-    println!("Time taken to process (and maybe write data): {:.2?}", processing_start.elapsed());
 
     // Shuffle records for random split
     let mut processed_records = processed_records;
@@ -445,6 +432,8 @@ fn process_and_save(
     write_pb.inc(1);
 
     write_pb.finish_with_message("Finished writing splits");
+
+    drop(stopwords);
 
     println!("Files successfully closed");
     
