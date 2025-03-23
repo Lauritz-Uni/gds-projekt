@@ -4,7 +4,6 @@ print("Program started")
 
 import sys
 sys.path.append(".")
-#import scipy.sparse
 import modin.pandas as pd
 import dask.dataframe as dd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -17,7 +16,6 @@ print("test")
 from utils.f1_score_model import categorize_reliable_or_fake
 
 print("test")
-start_time = time.time() #Starting timer
 
 pandarallel.initialize(progress_bar=True, nb_workers=4)
 
@@ -48,7 +46,7 @@ tfidf_val = vectorizer.transform(val_data["content-tokens_stemmed"].astype(str))
 
 print("assignming labels")
 
-# Parallelize label assignment
+# Parallelize label assignment with pandarallel
 train_data["binary_type"] = train_data["label"].parallel_apply(categorize_reliable_or_fake)
 test_data["binary_type"] = test_data["label"].parallel_apply(categorize_reliable_or_fake)
 val_data["binary_type"] = val_data["label"].parallel_apply(categorize_reliable_or_fake)
