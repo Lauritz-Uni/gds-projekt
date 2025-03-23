@@ -21,7 +21,7 @@ pandarallel.initialize(progress_bar=True, nb_workers=4)
 
 print("Pandarrell initialized, reading files")
 
-#reading files with dask
+#reading files with dask, using reduced data-sets to lessen the load for the script (look at conver_to_lesser.py)
 train_data = dd.read_csv('output/reduced_train.csv', usecols=["label", "content-tokens_stemmed"])
 test_data = dd.read_csv('output/reduced_test.csv', usecols=["label", "content-tokens_stemmed"])
 val_data = dd.read_csv('output/reduced_val.csv', usecols=["label", "content-tokens_stemmed"])
@@ -35,7 +35,7 @@ train_data = train_data.compute()
 test_data = test_data.compute()
 val_data = val_data.compute()
 
-# Convert preprocessed text into TF-IDF features
+# Convert preprocessed text into TF-IDF features. 50.000 features since there are 700.000 unique words (look at count_unique.py)
 vectorizer = TfidfVectorizer(max_features=50_000)
 
 print("applying vectorizor")
