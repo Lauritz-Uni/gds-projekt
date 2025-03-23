@@ -22,6 +22,10 @@ def categorize_reliable_or_fake(content_type):
         return 0
     return 1 if str(content_type).lower() == "reliable" else 0
 
+#function for labeling the liar dataset as 1 and 0
+def categorize_true_or_false(column):
+    return 1 if str(column).lower() == "true" else 0
+
 # Define file paths
 train_file = "data/995,000_rows_processed_train.csv"
 test_file = "data/995,000_rows_processed_test.csv"
