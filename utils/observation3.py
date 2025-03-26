@@ -4,7 +4,7 @@ import csv
 import re
 import matplotlib.pyplot as plt
 from collections import Counter
-import deprecated_code_pre_processor as cpp
+from pandas_csv_reader import read_csv_file
 
 def wordFrequency(csv_data, content_column):
     counterList = []
@@ -16,8 +16,7 @@ def wordFrequency(csv_data, content_column):
         counterList.append(wordCounter)
     return counterList
 
-processor = cpp.TextProcessor()
-csv_data = processor.full_pipeline('data/news_sample.csv', 'content')
+csv_data = read_csv_file('data/news_sample.csv')
 
 counterList = wordFrequency(csv_data, 'content-tokens_no_stop')
 
