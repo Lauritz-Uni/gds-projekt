@@ -4,7 +4,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, classification_report
 import numpy as np
 
-def train_logistic_regressor(train_csv, valid_csv, test_csv):
+def train_logistic_regressor(train_csv, valid_csv, test_csv, liar_csv):
     """
     Train a logistic regression model on the given CSV files and
     evaluate its performance on the test set.
@@ -16,18 +16,23 @@ def train_logistic_regressor(train_csv, valid_csv, test_csv):
     # valid_df = pd.read_csv(valid_csv, dtype={'content-tokens_stemmed': str})
     test_df = pd.read_csv(test_csv, dtype={'content-tokens_stemmed': str})
 
+    liar_df = pd.read_csv(liar_csv, dtype={'content-tokens_stemmed': str})
+
     print("[#] Preprocess labels...")
 
     # Preprocess labels: 'reliable' -> 1, others -> 0
     y_train = (train_df['label'] == 'reliable').astype(int)
     # y_valid = (valid_df['label'] == 'reliable').astype(int)
     y_test = (test_df['label'] == 'reliable').astype(int)
+    #on liar dataset labels are called 'type' where 'true' -> 1, others -> 0
+    y_liar = (liar_df['type'] == 'true').astype(int)
 
     print("[#] Creating vectorizer...")
 
     # Handle missing values efficiently and convert to string
     train_text = train_df['content-tokens_stemmed'].fillna('').str.split()
     test_text = test_df['content-tokens_stemmed'].fillna('').str.split()
+    liar_text = liar_df['content-tokens_stemmed'].fillna('').str.split()
 
     # Build vocabulary from training data and transform texts
     vectorizer = CountVectorizer(
@@ -45,6 +50,8 @@ def train_logistic_regressor(train_csv, valid_csv, test_csv):
     X_train = vectorizer.fit_transform(train_text)
     # X_valid = vectorizer.transform(valid_df['content-tokens_stemmed'].apply(lambda x: np.str_(x)))
     X_test = vectorizer.transform(test_text)
+
+    X_liar = vectorizer.transform(liar_text)
 
     print("[#] Creating model...")
 
@@ -68,6 +75,9 @@ def train_logistic_regressor(train_csv, valid_csv, test_csv):
     y_pred = model.predict(X_test)
     test_f1 = f1_score(y_test, y_pred)
 
+    liar_pred = model.predict(X_liar)
+    liar_f1 = f1_score(y_liar, liar_pred)
+
     print("\nVectorizer Hyperparameters Used:")
     print(f"- min_df: {vectorizer.get_params()['min_df']}")
     print(f"- max_features: {vectorizer.get_params()['max_features']}")
@@ -87,15 +97,20 @@ def train_logistic_regressor(train_csv, valid_csv, test_csv):
     print()
 
     print(f"\nTest F1 Score: {test_f1:.4f}\n")
+    print(f"\nLiar F1 Score: {liar_f1:.4f}\n")
 
-    print(f"{"-"*50}\nClassification Report:\n{'-'*50}")
+    print(f"{"-"*50}\nClassification Report for main dataset:\n{'-'*50}")
     print(classification_report(y_test, y_pred))
+
+    print(f"{"-"*50}\nClassification Report for liar dataset:\n{'-'*50}")
+    print(classification_report(y_liar, liar_pred))
 
 
 if __name__ == "__main__":
     default_train_csv = './output/995,000_rows_processed_train.csv'
     default_valid_csv = './output/995,000_rows_processed_val.csv'
     default_test_csv = './output/995,000_rows_processed_test.csv'
+    processed_liar_csv = './output/liar_test_combined.csv'
 
 
-    train_logistic_regressor(default_train_csv, default_valid_csv, default_test_csv)
+    train_logistic_regressor(default_train_csv, default_valid_csv, default_test_csv, processed_liar_csv)
