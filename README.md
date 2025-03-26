@@ -10,7 +10,7 @@ If you are using VSCode, then you can simply run
 ```
 code .
 ```
-To open the project in VSCode
+to open the project in VSCode
 
 # Preprocessor
 The preprocessor is written in rust and therefore takes some more time to get a running version.
@@ -49,7 +49,7 @@ NOTE: This will create a rather large file that is about 10 gb in addition to af
 Our models are written in Python 3.12.x. It is assumed that you have any Python 3.12.x installed and that you are using it to run the files.
 
 ## Virtual enviroment initialization
-You will probably want to create a virtual enviroment. We used Conda while coding this project, but most other types of Virtual enviroments should work.
+You will probably want to create a virtual enviroment. We used Conda while coding this project, but most other types of virtual enviroments should work.
 
 If you are using VSCode, you can do this by opening the command pallet and searching for "> Python: Select Intepreter" and then press create enviroment (or using one you have already made).
 
