@@ -44,7 +44,7 @@ It is possible to get the entirety of the processed file (including the output o
 ```
 ./rust-preprocess/target/release/rust-preprocess.exe --input "./data/995,000_rows.csv" --output "./output/995,000_rows_processed.csv" --keep-processed
 ```
-
+NOTE: This will create a rather large file that is about 10 gb in addition to aforementioned splits. Only run the above command if you need the entire preprocessed file.
 # Models
 Our models are written in Python 3.12.x. It is assumed that you have any Python 3.12.x installed and that you are using it to run the files.
 
