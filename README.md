@@ -76,5 +76,3 @@ Then, you want to run the script 'combine_liar_split.py' to combine the splits o
 And finally you need to run the script 'convert_to_lesser.py' to reduce the size of all the required files that we need to train and evaluate our model on. 
 
 Then when you have completed all these steps you can run the 'advanced_model.py'
-
-For both the large preproccesed fake news dataset that you now have from the previous step, and the liar_test dataset, you will need to run 
