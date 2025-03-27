@@ -3,8 +3,21 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, classification_report
 import numpy as np
+from pandarallel import pandarallel
 
-def train_logistic_regressor(train_csv, valid_csv, test_csv, liar_csv):
+pandarallel.initialize(progress_bar=True, verbose=0)
+
+"""
+If ran directly, change input files at the bottom of the script.
+"""
+
+def format_text(text):
+    """
+    Split into tokens.
+    """
+    return text.split()
+
+def load_datasets(train_csv, valid_csv, test_csv):
     """
     Train a logistic regression model on the given CSV files and
     evaluate its performance on the test set.
@@ -13,27 +26,34 @@ def train_logistic_regressor(train_csv, valid_csv, test_csv, liar_csv):
 
     # Load datasets
     train_df = pd.read_csv(train_csv, dtype={'content-tokens_stemmed': str})
-    # valid_df = pd.read_csv(valid_csv, dtype={'content-tokens_stemmed': str})
+    valid_df = pd.read_csv(valid_csv, dtype={'content-tokens_stemmed': str})
     test_df = pd.read_csv(test_csv, dtype={'content-tokens_stemmed': str})
 
-    liar_df = pd.read_csv(liar_csv, dtype={'content-tokens_stemmed': str})
-
-    print("[#] Preprocess labels...")
+    print("[#] Setting y...")
 
     # Preprocess labels: 'reliable' -> 1, others -> 0
     y_train = (train_df['label'] == 'reliable').astype(int)
-    # y_valid = (valid_df['label'] == 'reliable').astype(int)
+    y_valid = (valid_df['label'] == 'reliable').astype(int)
     y_test = (test_df['label'] == 'reliable').astype(int)
     #on liar dataset labels are called 'type' where 'true' -> 1, others -> 0
     y_liar = (liar_df['type'] == 'true').astype(int)
 
-    print("[#] Creating vectorizer...")
+    print("[#] Setting X...")
 
     # Handle missing values efficiently and convert to string
-    train_text = train_df['content-tokens_stemmed'].fillna('').str.split()
-    test_text = test_df['content-tokens_stemmed'].fillna('').str.split()
-    liar_text = liar_df['content-tokens_stemmed'].fillna('').str.split()
+    train_text = train_df['content-tokens_stemmed'].parallel_apply(format_text)
+    valid_text = valid_df['content-tokens_stemmed'].parallel_apply(format_text)
+    test_text = test_df['content-tokens_stemmed'].parallel_apply(format_text)
 
+    return train_text, valid_text, test_text, y_train, y_valid, y_test
+
+
+def train_logistic_regressor(train_text, valid_text, test_text, y_train, y_valid, y_test):
+    """
+    Train a logistic regression model on the given CSV files and
+    evaluate its performance on the test set.
+    """
+    print("[#] Creating vectorizer...")
     # Build vocabulary from training data and transform texts
     vectorizer = CountVectorizer(
         tokenizer=lambda x: x,  # No-op, expects pre-split lists
@@ -46,9 +66,8 @@ def train_logistic_regressor(train_csv, valid_csv, test_csv, liar_csv):
 
     print("[#] Fitting vectorizer...")
 
-    # X_valid = vectorizer.transform(valid_df['content-tokens_stemmed'].apply(lambda x: np.str_(x)))
     X_train = vectorizer.fit_transform(train_text)
-    # X_valid = vectorizer.transform(valid_df['content-tokens_stemmed'].apply(lambda x: np.str_(x)))
+    X_valid = vectorizer.transform(valid_text)
     X_test = vectorizer.transform(test_text)
 
     X_liar = vectorizer.transform(liar_text)
@@ -112,5 +131,5 @@ if __name__ == "__main__":
     default_test_csv = './output/995,000_rows_processed_test.csv'
     processed_liar_csv = './output/liar_test_combined.csv'
 
-
-    train_logistic_regressor(default_train_csv, default_valid_csv, default_test_csv, processed_liar_csv)
+    train_text, valid_text, test_text, y_train, y_valid, y_test = load_datasets(default_train_csv, default_valid_csv, default_test_csv)
+    train_logistic_regressor(train_text, valid_text, test_text, y_train, y_valid, y_test)
