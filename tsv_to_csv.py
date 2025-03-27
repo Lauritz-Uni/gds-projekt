@@ -1,4 +1,8 @@
 import pandas as pd 
+"""
+This script reads a TSV file and saves it as a CSV file.
+"""
+
 
 df = pd.read_table("data/test.tsv", sep="\t")
 
