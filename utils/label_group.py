@@ -1,8 +1,8 @@
-import deprecated_code_pre_processor
 import pandas as pd
+from pandas_csv_reader import read_csv_file
 
 
-csv_data = deprecated_code_pre_processor.read_csv_file("data/news_sample.csv")
+csv_data = read_csv_file("data/news_sample.csv")
 
 # Lists for reliable and fake id's
 reliable = []
