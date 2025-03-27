@@ -28,8 +28,8 @@ def combine_csv_files(file1_path, file2_path, output_path):
 # Example usage
 if __name__ == "__main__":
     # Replace these with your actual file paths
-    first_file = (r'output\995,000_rows_train.csv')
-    second_file = (r'data\articles_data_processed.csv')
-    output_file = (r'output\combined_dataset.csv')
+    first_file = ("output/995,000_rows_train.csv")
+    second_file = ("output/reduced_articles_data_processed_reliable.csv")
+    output_file = ("output/combined_dataset.csv")
     
     combine_csv_files(first_file, second_file, output_file)
