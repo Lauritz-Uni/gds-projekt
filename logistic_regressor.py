@@ -14,16 +14,16 @@ def format_text(text):
     """Split into tokens."""
     return text.split()
 
-def load_datasets(train_csv, valid_csv, test_csv):
+def load_datasets(train_csv, valid_csv, test_csv, column_name='content-tokens_stemmed'):
     """
     Load datasets and preprocess labels.
     """
     print("[#] Loading datasets...")
     
     # Load datasets with efficient data types
-    train_df = pd.read_csv(train_csv, dtype={'content-tokens_stemmed': str})
-    valid_df = pd.read_csv(valid_csv, dtype={'content-tokens_stemmed': str})
-    test_df = pd.read_csv(test_csv, dtype={'content-tokens_stemmed': str})
+    train_df = pd.read_csv(train_csv, dtype={column_name: str})
+    valid_df = pd.read_csv(valid_csv, dtype={column_name: str})
+    test_df = pd.read_csv(test_csv, dtype={column_name: str})
 
     print("[#] Setting y...")
     
@@ -35,9 +35,9 @@ def load_datasets(train_csv, valid_csv, test_csv):
     print("[#] Setting X...")
     
     # Handle missing values and convert to string
-    train_text = train_df['content-tokens_stemmed'].fillna('').apply(format_text)
-    valid_text = valid_df['content-tokens_stemmed'].fillna('').apply(format_text)
-    test_text = test_df['content-tokens_stemmed'].fillna('').apply(format_text)
+    train_text = train_df[column_name].fillna('').apply(format_text)
+    valid_text = valid_df[column_name].fillna('').apply(format_text)
+    test_text = test_df[column_name].fillna('').apply(format_text)
 
     return train_text, valid_text, test_text, y_train, y_valid, y_test
 

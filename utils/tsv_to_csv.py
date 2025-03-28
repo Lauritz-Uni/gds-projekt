@@ -5,7 +5,7 @@ This script reads a TSV file and saves it as a CSV file.
 
 def convert_tsv_to_csv(input_file, output_file):
     columns = [
-        'id', 'label', 'content', 'subjects', 'speaker', 'job_title',
+        'id', 'type', 'content', 'subjects', 'speaker', 'job_title',
         'state', 'party', 'barely_true', 'false', 'half_true',
         'mostly_true', 'pants_fire', 'context'
     ]
@@ -15,9 +15,9 @@ def convert_tsv_to_csv(input_file, output_file):
     df.to_csv("./output/"+output_file, index=False)
 
 if __name__ == "__main__":
-    files = [["test.tsv", "test.csv"],
-             ["train.tsv", "train.csv"],
-             ["valid.tsv", "valid.csv"]]
+    files = [["test.tsv", "liar_test.csv"],
+             ["train.tsv", "liar_train.csv"],
+             ["valid.tsv", "liar_valid.csv"]]
 
     for file in files:
         print(f"converting {file[0]} to {file[1]}")

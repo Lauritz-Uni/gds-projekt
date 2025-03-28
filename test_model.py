@@ -41,16 +41,14 @@ def load_datasets(train_csv, valid_csv, test_csv):
 
     return train_text, valid_text, test_text, y_train, y_valid, y_test
 
-def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
+def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test, is_995k=True):
     """
     Optimize and train a RandomForest model with hyperparameter tuning.
     """
     
     print("[#] Setting up vectorizer...")
     vectorizer = CountVectorizer(
-            tokenizer=lambda x: x,
-            token_pattern=None,
-            lowercase=False,
+            lowercase=True,
             binary=True,
             dtype=np.uint8,
             max_features=10000,
@@ -58,10 +56,16 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
             max_df=0.95 # Ignore words that appear in more than 95% of documents
         )
     
+    if is_995k:
+        print("[*] Using custom tokenizer since input is 955k rows...")
+        vectorizer.set_params({'tokenizer':lambda x: x, 'token_pattern':None})
+    else:
+        print("[*] Using default tokenizer...")
+    
     print("[#] Vectorizing data...")
     train_text = vectorizer.fit_transform(train_text)
 
-    # 3. Parallel transform for validation/test
+    # Parallel transform for validation/test
     print("[#] Transforming data...")
     valid_text = vectorizer.transform(valid_text)
     test_text = vectorizer.transform(test_text)
@@ -153,9 +157,9 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     return best_pipeline
 
 if __name__ == "__main__":
-    default_train_csv = './output/reduced_train.csv'
-    default_valid_csv = './output/reduced_val.csv'
-    default_test_csv = './output/reduced_test.csv'
+    default_train_csv = './output/train.csv'
+    default_valid_csv = './output/val.csv'
+    default_test_csv = './output/test.csv'
     
     # Load data
     train_text, valid_text, test_text, y_train, y_valid, y_test = load_datasets(
