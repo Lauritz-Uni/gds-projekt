@@ -12,7 +12,7 @@ pandarallel.initialize(progress_bar=True, verbose=0)
 
 def format_text(text):
     """Split into tokens."""
-    return text.split()
+    return text.split(" ")
 
 def load_datasets(train_csv, valid_csv, test_csv, column_name='content-tokens_stemmed'):
     """

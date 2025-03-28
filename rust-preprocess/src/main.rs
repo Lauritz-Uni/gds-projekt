@@ -352,7 +352,7 @@ fn process_single_file(
         for record in &processed_records[train_size..train_size + val_size] {
             let reliability_status = record.get(reliability_col_index).unwrap_or_default();
             let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
-                "reliable"
+                "true"
             } else {
                 "fake"
             };
