@@ -61,18 +61,18 @@ In a terminal window to install the required packages.
 
 
 ## Basic model
+To run our basic model, you will need to install the required packages to your device. You will also need the processed files from running the previous preprocessing script mentioned above. 
+
+Then simply run the script 'logistic_regressor.py' and the training and results will be printed in the terminal.
+
+Note that if you want to run the model test on the Liar test dataset, you will have to change the 'default_test_csv' variable at the bottom of the script to 'reduced_liar.csv'. 
+And also 'y_test' variable to look for the 'type' column, instead of 'label', since the liar dataset uses a different name for labels. 
 
 ## Advanced model
-Firstly you will need to the required packages downloaded to your device.
+You will need to install the required packages to your device. 
 
-Before running the advanced model, you will need to run some of the smaller scripts to lessen the load of the preprocessed files, and to make them elligable for evaluation. 
+Firstly, run the script: 'Preprocess.py' which will yield the necessary data splits to run the model.
 
-Firstly, run the script 'tsv_to_csv_py' which converts the liar test set into a csv file. 
+Then you need to run the script 'convert_to_lesser.py' to reduce the size of all the required files that we need to train and evaluate the model on. 
 
-Next, you should run the preproccesing as before, on the output csv file from the first step right above. This should yield a three-way split of the liar test dataset.
-
-Then, you want to run the script 'combine_liar_split.py' to combine the splits of the liar test data into one csv file.
-
-And finally you need to run the script 'convert_to_lesser.py' to reduce the size of all the required files that we need to train and evaluate our model on. 
-
-Then when you have completed all these steps you can run the 'advanced_model.py'
+Then when you have completed these steps you can run the 'advanced_model.py' scripts and the results will be printed in the terminal.
