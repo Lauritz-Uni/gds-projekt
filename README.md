@@ -25,6 +25,10 @@ This will take about 1-2 mins to compile.
 
 
 ## How to run
+You can run the python file "preprocess.py" to do all preprocessing steps. This assumes you have both liar data set and 955,000_rows dataset in the data directory with default names.
+
+### Manually run the preprocessor
+
 It is assumed you are running these commands in the root folder of the project (probably named "gds-projekt").
 
 You can run 
