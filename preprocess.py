@@ -2,7 +2,7 @@ import pandas as pd
 import os
 from utils.pandas_csv_reader import read_csv_file
 """
-This script reads a TSV file and saves it as a CSV file.
+This script is used to preprocess the data.
 """
 
 def convert_tsv_to_csv(input_file, output_file):

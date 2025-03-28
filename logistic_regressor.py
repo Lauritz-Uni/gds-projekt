@@ -93,7 +93,7 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     print("[#] This may take a while...")
 
     # Define cross-validation
-    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     
     # Use validation set for evaluation during grid search
     grid_search = GridSearchCV(
