@@ -1,6 +1,6 @@
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import f1_score, classification_report
 import numpy as np
 from pandarallel import pandarallel
@@ -43,7 +43,7 @@ def load_datasets(train_csv, valid_csv, test_csv):
 
 def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     """
-    Optimize and train a logistic regression model with hyperparameter tuning.
+    Optimize and train a RandomForest model with hyperparameter tuning.
     """
     
     print("[#] Setting up vectorizer...")
@@ -69,19 +69,43 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     print("[#] Creating pipeline...")
     # Create pipeline for easier parameter tuning
     pipeline = Pipeline([
-        ('classifier', LogisticRegression(
-            max_iter=10000,
+        ('classifier', RandomForestClassifier(
             random_state=42,
             class_weight='balanced',
-            verbose=0
+            n_jobs=-1  # Use all available cores
         ))
     ])
+
+    print("\n[#] Running test fit with default parameters...")
+    try:
+        test_model = RandomForestClassifier(
+            random_state=42,
+            class_weight='balanced',
+            n_jobs=-1,
+            max_depth=30,
+            verbose=2
+        )
+        start_time = time.time()
+        test_model.fit(train_text, y_train)
+        test_pred = test_model.predict(test_text)
+        test_f1 = f1_score(y_test, test_pred)
+        print(f"Test fit completed in {time.time() - start_time:.2f} seconds")
+        print(f"Test F1 score: {test_f1:.4f}")
+        print(f"{'-'*50}\nTest fit classification Report:\n{'-'*50}")
+        print(classification_report(y_test, test_pred))
+        print("Test fit successful! Proceeding with grid search...")
+    except Exception as e:
+        print(f"\n[!] Error during test fit: {str(e)}")
+        print("[!] Fix the error before proceeding with grid search!")
+        return None
     
     # Define parameter grid for optimization
     param_grid = {
-        'classifier__C': [0.1, 1.0, 10.0],  # Regularization strength
-        'classifier__penalty': ['l2'],  # We're using lbfgs which only supports l2
-        'classifier__solver': ['lbfgs']
+        'classifier__n_estimators': [100, 200, 300],  # Number of trees in the forest
+        'classifier__max_depth': [10, 20, 30],  # Maximum depth of the tree
+        'classifier__min_samples_split': [2, 5, 10],  # Minimum number of samples required to split a node
+        'classifier__min_samples_leaf': [1, 2, 4],  # Minimum number of samples required at each leaf node
+        'classifier__max_features': ['sqrt', 'log2']  # Number of features to consider at every split
     }
     
     print("[#] Performing grid search...")
@@ -95,10 +119,6 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
         n_jobs=-1,  # Use all available cores
         verbose=3
     )
-    
-    # Combine train and validation for more training data (optional)
-    # X_combined = train_text + valid_text
-    # y_combined = np.concatenate([y_train, y_valid])
     
     # Fit the model with timing
     start_time = time.time()
@@ -133,9 +153,9 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     return best_pipeline
 
 if __name__ == "__main__":
-    default_train_csv = './output/995,000_rows_processed_train.csv'
-    default_valid_csv = './output/995,000_rows_processed_val.csv'
-    default_test_csv = './output/995,000_rows_processed_test.csv'
+    default_train_csv = './output/reduced_train.csv'
+    default_valid_csv = './output/reduced_val.csv'
+    default_test_csv = './output/reduced_test.csv'
     
     # Load data
     train_text, valid_text, test_text, y_train, y_valid, y_test = load_datasets(
