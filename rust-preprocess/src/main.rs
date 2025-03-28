@@ -20,7 +20,7 @@ use std::sync::Arc;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Input CSV file path
+    /// Input CSV file path (or comma-separated list of 3 files for train,val,test)
     #[arg(short, long)]
     input: String,
 
@@ -35,6 +35,10 @@ struct Args {
     /// Keep processed data in the output CSV (if false, will not create example_processed.csv)
     #[arg(short, long, action=ArgAction::SetTrue)]
     keep_processed: bool,
+
+    /// Use three input files (train, val, test) instead of one
+    #[arg(long, action=ArgAction::SetTrue)]
+    three_files: bool,
 }
 
 // Compile regular expressions once using lazy initialization
@@ -159,28 +163,22 @@ fn clean_text(text: &str) -> (String, Vec<String>, Vec<String>, Vec<String>, Vec
     (cleaned, dates, emails, urls, numbers)
 }
 
-/// Main processing function that handles:
-/// - Reading input CSV
-/// - Parallel processing of records
-/// - Writing output CSV with additional fields
-fn process_and_save(
+/// Process a single input file
+fn process_single_file(
     input_file: &str,
     output_file: &str,
     column_name: &str,
-    keep_processed: &bool
+    keep_processed: bool
 ) -> Result<(), Box<dyn Error>> {
     let processing_start = Instant::now();
 
-
     println!("Reading {input_file}!");
-    // Read input CSV file
     let mut rdr = Reader::from_path(input_file)?;
     let string_records: Vec<csv::StringRecord> = rdr.records().collect::<Result<_, _>>()?;
     let total_records = string_records.len();
     println!("Time taken to read data: {:.2?}", processing_start.elapsed());
 
     let process_records_start = Instant::now();
-    // Prepare output CSV writer with extended headers
     let mut headers = rdr.headers()?.clone();
     headers.push_field("dates");
     headers.push_field("emails");
@@ -190,17 +188,14 @@ fn process_and_save(
     headers.push_field(&(column_name.to_owned()+"-tokens_no_stop"));
     headers.push_field(&(column_name.to_owned()+"-tokens_stemmed"));
 
-    // Find index of the target column
     let column_index = headers
         .iter()
         .position(|h| h == column_name)
         .ok_or_else(|| format!("Column '{}' not found", column_name))?;
 
-    // Load resources needed for processing
     let stopwords = load_stopwords()?;
     let en_stemmer = Stemmer::create(Algorithm::English);
     
-    // Setup progress bar with thread-safe wrapper
     let pb = Arc::new(ProgressBar::new(total_records as u64));
     pb.set_style(
         ProgressStyle::default_bar()
@@ -208,16 +203,12 @@ fn process_and_save(
             .progress_chars("##-"),
     );
 
-    // Process records in parallel using Rayon
     let processed_records: Vec<_> = string_records
-    .par_iter()
+        .par_iter()
         .filter_map(|record| {
             let content = record.get(column_index).unwrap_or("");
-            
-            // Clean text and extract entities
             let (cleaned, dates, emails, urls, numbers) = clean_text(content);
             
-            // Tokenization and text processing
             let tokens = tokenize(&cleaned);
             let filtered = remove_stopwords(tokens.clone(), &stopwords);
             let stemmed = filtered.iter()
@@ -225,15 +216,12 @@ fn process_and_save(
                 .collect::<Vec<_>>()
                 .join(" ");
 
-            // Update progress bar for each processed record
             pb.inc(1);
 
-            // Skip records with empty stemmed
             if stemmed.is_empty() {
                 return None;
             }
 
-            // Build enhanced output record
             let mut new_record = record.clone();
             new_record.push_field(&format_numbers_preserving_format(
                 &dates.join("; ")
@@ -261,8 +249,7 @@ fn process_and_save(
     pb.finish_with_message("Done processing");
     println!("Time taken to process data: {:.2?}", process_records_start.elapsed());
 
-    // Write processed records to output CSV, if keep_processed is true
-    if *keep_processed {
+    if keep_processed {
         let write_start = Instant::now();
         if let Err(e) = std::fs::remove_file(output_file) {
             eprintln!("Error removing file: {}", e);
@@ -277,18 +264,14 @@ fn process_and_save(
         println!("Time taken to write data: {:.2?}", write_start.elapsed());
     }
 
-    // Shuffle records for random split
     let mut processed_records = processed_records;
     let mut rng = rng();
     processed_records.as_mut_slice().shuffle(&mut rng);
 
-    // Calculate split sizes
     let total = processed_records.len();
     let train_size = (total as f64 * 0.8) as usize;
     let val_size = (total as f64 * 0.1) as usize;
-    // let test_size = total - train_size - val_size;
 
-    // Create split paths
     let output_path = Path::new(output_file);
     let stem = output_path.file_stem()
         .unwrap_or_default()
@@ -302,7 +285,6 @@ fn process_and_save(
     let val_path = output_path.with_file_name(format!("{}_val.{}", stem, extension));
     let test_path = output_path.with_file_name(format!("{}_test.{}", stem, extension));
 
-    // Determine columns to exclude
     let exclude_names = vec![
         column_name.to_string(),
         format!("{}-tokens", column_name),
@@ -320,17 +302,15 @@ fn process_and_save(
         .position(|h| h == reliability_column)
         .ok_or_else(|| format!("Column '{}' not found", reliability_column))?;
     
-    // Modified: Create filtered headers with type column
     let mut filtered_header_fields: Vec<&str> = headers.iter()
         .enumerate()
         .filter(|(i, _)| !exclude_indices.contains(i))
         .map(|(_, name)| name)
         .collect();
-        filtered_header_fields.push("label"); // Add type column
+        filtered_header_fields.push("label");
     let filtered_headers = csv::StringRecord::from(filtered_header_fields);
 
-    // Add a new progress bar for writing
-    let write_pb = ProgressBar::new(3);  // 3 splits
+    let write_pb = ProgressBar::new(3);
     write_pb.set_style(ProgressStyle::default_bar()
         .template("[Writing splits] {bar:40} {pos}/{len} ({eta_precise})")?);
 
@@ -339,7 +319,6 @@ fn process_and_save(
         let mut train_wtr = Writer::from_path(train_path)?;
         train_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[0..train_size] {
-            // Get type from original record
             let reliability_status = record.get(reliability_col_index).unwrap_or_default();
             let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
                 "reliable"
@@ -347,14 +326,12 @@ fn process_and_save(
                 "fake"
             };
 
-            // Build filtered record
             let mut filtered_record: Vec<&str> = record.iter()
                 .enumerate()
                 .filter(|(i, _)| !exclude_indices.contains(i))
                 .map(|(_, field)| field)
                 .collect();
             
-            // Append type column
             filtered_record.push(type_label);
             
             train_wtr.write_record(&filtered_record)?;
@@ -373,10 +350,9 @@ fn process_and_save(
         let mut val_wtr = Writer::from_path(val_path)?;
         val_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[train_size..train_size + val_size] {
-            // Get type status from original record
             let reliability_status = record.get(reliability_col_index).unwrap_or_default();
             let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
-                "reliable"
+                "true"
             } else {
                 "fake"
             };
@@ -387,7 +363,6 @@ fn process_and_save(
                 .map(|(_, field)| field)
                 .collect();
             
-            // Append type column
             filtered_record.push(type_label);
 
             val_wtr.write_record(&filtered_record)?;
@@ -406,7 +381,6 @@ fn process_and_save(
         let mut test_wtr = Writer::from_path(test_path)?;
         test_wtr.write_record(&filtered_headers)?;
         for record in &processed_records[train_size + val_size..] {
-            // Get type status from original record
             let reliability_status = record.get(reliability_col_index).unwrap_or_default();
             let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
                 "reliable"
@@ -420,7 +394,6 @@ fn process_and_save(
                 .map(|(_, field)| field)
                 .collect();
             
-            // Append type column
             filtered_record.push(type_label);
 
             test_wtr.write_record(&filtered_record)?;
@@ -430,13 +403,235 @@ fn process_and_save(
     }
 
     write_pb.inc(1);
-
     write_pb.finish_with_message("Finished writing splits");
 
-    drop(stopwords);
+    println!("Files successfully closed");
+    println!("Total processing time: {:.2?}", processing_start.elapsed());
+    Ok(())
+}
+
+/// Process three input files (train, val, test)
+fn process_three_files(
+    input_files: &[String],
+    output_file: &str,
+    column_name: &str
+) -> Result<(), Box<dyn Error>> {
+    if input_files.len() != 3 {
+        return Err("Expected exactly 3 input files for train, val, test".into());
+    }
+
+    let processing_start = Instant::now();
+    let stopwords = load_stopwords()?;
+    let en_stemmer = Stemmer::create(Algorithm::English);
+
+    // Process each file separately
+    let mut all_processed = Vec::new();
+    let mut all_headers = None;
+
+    for (i, input_file) in input_files.iter().enumerate() {
+        println!("Processing {} (file {}/3)", input_file, i+1);
+        let mut rdr = Reader::from_path(input_file)?;
+        let string_records: Vec<csv::StringRecord> = rdr.records().collect::<Result<_, _>>()?;
+        let total_records = string_records.len();
+
+        let pb = Arc::new(ProgressBar::new(total_records as u64));
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("[{elapsed_precise}] {bar:40} {pos}/{len} ({percent}%) ETA: {eta_precise}")?
+                .progress_chars("##-"),
+        );
+
+        let mut headers = rdr.headers()?.clone();
+        headers.push_field("dates");
+        headers.push_field("emails");
+        headers.push_field("urls");
+        headers.push_field("numbers");
+        headers.push_field(&(column_name.to_owned()+"-tokens"));
+        headers.push_field(&(column_name.to_owned()+"-tokens_no_stop"));
+        headers.push_field(&(column_name.to_owned()+"-tokens_stemmed"));
+
+        if all_headers.is_none() {
+            all_headers = Some(headers.clone());
+        }
+
+        let column_index = headers
+            .iter()
+            .position(|h| h == column_name)
+            .ok_or_else(|| format!("Column '{}' not found", column_name))?;
+
+        let processed_records: Vec<_> = string_records
+            .par_iter()
+            .filter_map(|record| {
+                let content = record.get(column_index).unwrap_or("");
+                let (cleaned, dates, emails, urls, numbers) = clean_text(content);
+                
+                let tokens = tokenize(&cleaned);
+                let filtered = remove_stopwords(tokens.clone(), &stopwords);
+                let stemmed = filtered.iter()
+                    .map(|word| en_stemmer.stem(word).to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                pb.inc(1);
+
+                if stemmed.is_empty() {
+                    return None;
+                }
+
+                let mut new_record = record.clone();
+                new_record.push_field(&format_numbers_preserving_format(
+                    &dates.join("; ")
+                ));
+                new_record.push_field(&format_numbers_preserving_format(
+                    &emails.join("; ")
+                ));
+                new_record.push_field(&format_numbers_preserving_format(
+                    &urls.join("; ")
+                ));
+                new_record.push_field(&format_numbers_preserving_format(
+                    &numbers.join("; ")
+                ));
+                new_record.push_field(&tokens.join(" "));
+                new_record.push_field(&filtered.join(" "));
+                new_record.push_field(&stemmed);
+                
+                Some(new_record)
+            })
+            .collect();
+
+        pb.finish_with_message(format!("Done processing {}", input_file));
+        all_processed.push(processed_records);
+    }
+
+    // Prepare output paths
+    let output_path = Path::new(output_file);
+    let stem = output_path.file_stem()
+        .unwrap_or_default()
+        .to_str()
+        .unwrap_or("./output");
+    let extension = output_path.extension()
+        .map(|e| e.to_str().unwrap_or("csv"))
+        .unwrap_or("csv");
+
+    let train_path = output_path.with_file_name(format!("{}_train.{}", stem, extension));
+    let val_path = output_path.with_file_name(format!("{}_val.{}", stem, extension));
+    let test_path = output_path.with_file_name(format!("{}_test.{}", stem, extension));
+
+    // Get headers for filtered output
+    let headers = all_headers.ok_or("No headers found")?;
+    let exclude_names = vec![
+        column_name.to_string(),
+        format!("{}-tokens", column_name),
+        format!("{}-tokens_no_stop", column_name),
+    ];
+
+    let exclude_indices: Vec<usize> = headers.iter()
+        .enumerate()
+        .filter(|(_, name)| exclude_names.contains(&name.to_string()))
+        .map(|(i, _)| i)
+        .collect();
+
+    let reliability_column = "type";
+    let reliability_col_index = headers.iter()
+        .position(|h| h == reliability_column)
+        .ok_or_else(|| format!("Column '{}' not found", reliability_column))?;
+    
+    let mut filtered_header_fields: Vec<&str> = headers.iter()
+        .enumerate()
+        .filter(|(i, _)| !exclude_indices.contains(i))
+        .map(|(_, name)| name)
+        .collect();
+    filtered_header_fields.push("label");
+    let filtered_headers = csv::StringRecord::from(filtered_header_fields);
+
+    // Write each split
+    let write_pb = ProgressBar::new(3);
+    write_pb.set_style(ProgressStyle::default_bar()
+        .template("[Writing splits] {bar:40} {pos}/{len} ({eta_precise})")?);
+
+    // Write training split (first file)
+    {
+        let mut train_wtr = Writer::from_path(train_path)?;
+        train_wtr.write_record(&filtered_headers)?;
+        for record in &all_processed[0] {
+            let reliability_status = record.get(reliability_col_index).unwrap_or_default();
+            let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
+                "reliable"
+            } else {
+                "fake"
+            };
+
+            let mut filtered_record: Vec<&str> = record.iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude_indices.contains(i))
+                .map(|(_, field)| field)
+                .collect();
+            
+            filtered_record.push(type_label);
+            
+            train_wtr.write_record(&filtered_record)?;
+        }
+        train_wtr.flush()?;
+        drop(train_wtr);
+    }
+    write_pb.inc(1);
+
+    // Write validation split (second file)
+    {
+        let mut val_wtr = Writer::from_path(val_path)?;
+        val_wtr.write_record(&filtered_headers)?;
+        for record in &all_processed[1] {
+            let reliability_status = record.get(reliability_col_index).unwrap_or_default();
+            let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
+                "reliable"
+            } else {
+                "fake"
+            };
+
+            let mut filtered_record: Vec<&str> = record.iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude_indices.contains(i))
+                .map(|(_, field)| field)
+                .collect();
+            
+            filtered_record.push(type_label);
+            
+            val_wtr.write_record(&filtered_record)?;
+        }
+        val_wtr.flush()?;
+        drop(val_wtr);
+    }
+    write_pb.inc(1);
+
+    // Write test split (third file)
+    {
+        let mut test_wtr = Writer::from_path(test_path)?;
+        test_wtr.write_record(&filtered_headers)?;
+        for record in &all_processed[2] {
+            let reliability_status = record.get(reliability_col_index).unwrap_or_default();
+            let type_label = if reliability_status.eq_ignore_ascii_case("reliable") {
+                "reliable"
+            } else {
+                "fake"
+            };
+
+            let mut filtered_record: Vec<&str> = record.iter()
+                .enumerate()
+                .filter(|(i, _)| !exclude_indices.contains(i))
+                .map(|(_, field)| field)
+                .collect();
+            
+            filtered_record.push(type_label);
+            
+            test_wtr.write_record(&filtered_record)?;
+        }
+        test_wtr.flush()?;
+        drop(test_wtr);
+    }
+    write_pb.inc(1);
+    write_pb.finish_with_message("Finished writing splits");
 
     println!("Files successfully closed");
-    
     println!("Total processing time: {:.2?}", processing_start.elapsed());
     Ok(())
 }
@@ -452,7 +647,14 @@ fn main() {
         println!("Keeping processed files...");
     }
 
-    if let Err(e) = process_and_save(&args.input, &args.output, &args.column, &args.keep_processed) {
+    let result = if args.three_files {
+        let input_files: Vec<String> = args.input.split(',').map(|s| s.trim().to_string()).collect();
+        process_three_files(&input_files, &args.output, &args.column)
+    } else {
+        process_single_file(&args.input, &args.output, &args.column, args.keep_processed)
+    };
+
+    if let Err(e) = result {
         eprintln!("Error: {}", e);
     }
     println!("Processing Done! Total time: {:.2?}", start.elapsed());
