@@ -29,26 +29,32 @@ You can run the python file "preprocess.py" to do all preprocessing steps. This 
 
 ### Manually run the preprocessor
 
-It is assumed you are running these commands in the root folder of the project (probably named "gds-projekt").
+It is assumed you are running these commands in the rust-preprocess folder of the project folder.
 
 You can run 
 ```
-./rust-preprocess/target/release/rust-preprocess.exe --help
+cargo run -- --help
 ```
 to get an overview of all the arguments available.
 
 To preprocess a file with only the different splits run this in a terminal window
 ```
-./rust-preprocess/target/release/rust-preprocess.exe --input "./data/995,000_rows.csv" --output "./output/995,000_rows_processed.csv"
+cargo run -- --input "../data/995,000_rows.csv" --output "../output/995,000_rows_processed.csv"
 ```
 This will create three files in the output folder. The name "995,000_rows_processed" will define what will be prepended to the splits.
 Note: this specific command creates about 2-3 gb of additional data.
 
 It is possible to get the entirety of the processed file (including the output of cleaning steps) by running:
 ```
-./rust-preprocess/target/release/rust-preprocess.exe --input "./data/995,000_rows.csv" --output "./output/995,000_rows_processed.csv" --keep-processed
+cargo run -- --input "../data/995,000_rows.csv" --output "../output/995,000_rows_processed.csv" --keep-processed
 ```
-NOTE: This will create a rather large file that is about 10 gb in addition to aforementioned splits. Only run the above command if you need the entire preprocessed file.
+Note that this will create a rather large file that is about 10 gb in addition to aforementioned splits. Only run the above command if you need the entire preprocessed file.
+
+You can also preprocess splits, such as the ones found in the liar dataset:
+```
+cargo run -- --input ..\output\liar_train.csv,..\output\liar_valid.csv,..\output\liar_test.csv --output ..\output\liar.csv --three-files
+```
+Note that input files are seperated by commas and therefore the filepaths cannot contain commas anywhere.
 # Models
 Our models are written in Python 3.12.x. It is assumed that you have any Python 3.12.x installed and that you are using it to run the files.
 
