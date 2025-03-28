@@ -79,12 +79,13 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     
     # Define parameter grid for optimization
     param_grid = {
-        'classifier__C': [0.1, 1.0, 10.0],  # Regularization strength
-        'classifier__penalty': ['l2'],  # We're using lbfgs which only supports l2
-        'classifier__solver': ['lbfgs']
+        'classifier__C': np.logspace(-1, 2, 10),  # Regularization strength
+        'classifier__penalty': ['l2'],
+        'classifier__solver': ['lbfgs', 'newton-cg', 'sag', 'saga', 'liblinear']
     }
     
     print("[#] Performing grid search...")
+    print("[#] This may take a while...")
     
     # Use validation set for evaluation during grid search
     grid_search = GridSearchCV(
@@ -102,7 +103,7 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     
     # Fit the model with timing
     start_time = time.time()
-    grid_search.fit(train_text, y_train)
+    grid_search.fit(valid_text, y_valid)
     print(f"\nGrid search completed in {time.time() - start_time:.2f} seconds")
     
     # Evaluate on validation set
@@ -119,7 +120,7 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     # Retrain on combined train+validation data with best parameters
     print("\n[#] Retraining on combined train+validation data with best parameters...")
     best_pipeline = grid_search.best_estimator_
-    best_pipeline.fit(np.concatenate([train_text, valid_text]), np.concatenate([y_train, y_valid]))
+    best_pipeline.fit(train_text, y_train)
     
     # Evaluate on test set
     test_pred = best_pipeline.predict(test_text)
