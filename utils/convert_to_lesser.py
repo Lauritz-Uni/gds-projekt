@@ -20,7 +20,7 @@ def convert_to_lesser():
 
     columns_to_read_liar = ["type","content-tokens_stemmed"]
 
-    df1 = pd.read_csv("output/liar_test_combined.csv", usecols=columns_to_read_liar)
+    df1 = pd.read_csv("output/liar_test.csv", usecols=columns_to_read_liar)
 
     df1.to_csv("output/reduced_liar.csv", index=False)
 
