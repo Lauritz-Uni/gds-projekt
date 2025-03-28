@@ -61,9 +61,15 @@ In a terminal window to install the required packages.
 
 
 ## Basic model
+To run our basic model, you will need to install the required packages to your device. You will also need the processed files from running the previous preprocessing script mentioned above. 
+
+Then simply run the script 'logistic_regressor.py' and the training and results will be printed in the terminal.
+
+Note that if you want to run the model test on the Liar test dataset, you will have to change the 'default_test_csv' variable at the bottom of the script to 'reduced_liar.csv'. 
+And also 'y_test' variable to look for the 'type' column, instead of 'label', since the liar dataset uses a different name for labels. 
 
 ## Advanced model
-You will need to install the required packages downloaded to your device. 
+You will need to install the required packages to your device. 
 
 Firstly, run the script: 'Preprocess.py' which will yield the necessary data splits to run the model.
 
