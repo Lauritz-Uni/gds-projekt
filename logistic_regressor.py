@@ -84,9 +84,9 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     
     # Define parameter grid for optimization
     param_grid = {
-        'classifier__C': np.logspace(-1, 2, 10),  # Regularization strength
+        'classifier__C': np.logspace(-1, 2, 4),  # Regularization strength
         'classifier__penalty': ['l2'],
-        'classifier__solver': ['lbfgs', 'newton-cg', 'sag', 'saga', 'liblinear']
+        'classifier__solver': ['lbfgs', 'newton-cg', 'liblinear']
     }
     
     print("[#] Performing grid search...")
@@ -127,7 +127,7 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     print(f"\nValidation F1 Score: {valid_f1:.4f}")
     
     # Retrain on combined train+validation data with best parameters
-    print("\n[#] Retraining on combined train+validation data with best parameters...")
+    print("\n[#] Retraining on train data with best parameters...")
     best_pipeline = grid_search.best_estimator_
     best_pipeline.fit(train_text, y_train)
     
