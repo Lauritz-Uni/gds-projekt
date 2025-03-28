@@ -52,7 +52,7 @@ Note that this will create a rather large file that is about 10 gb in addition t
 
 You can also preprocess splits, such as the ones found in the liar dataset:
 ```
-cargo run -- --input ..\output\liar_train.csv,..\output\liar_valid.csv,..\output\liar_test.csv --output ..\output\liar.csv --three-files
+./rust-preprocess/target/release/rust-preprocess.exe --input .\output\liar_train.csv,.\output\liar_valid.csv,.\output\liar_test.csv --output .\output\liar.csv --three-files
 ```
 Note that input files are seperated by commas and therefore the filepaths cannot contain commas anywhere.
 # Models
