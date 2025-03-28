@@ -7,6 +7,7 @@ from pandarallel import pandarallel
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 import time
+from sklearn.model_selection import StratifiedKFold
 
 pandarallel.initialize(progress_bar=True, verbose=0)
 
@@ -26,11 +27,15 @@ def load_datasets(train_csv, valid_csv, test_csv, column_name='content-tokens_st
     test_df = pd.read_csv(test_csv, dtype={column_name: str})
 
     print("[#] Setting y...")
+
+    print(np.unique_counts(train_df['label']))
     
     # Preprocess labels: 'reliable' -> 1, others -> 0
     y_train = (train_df['label'] == 'reliable').astype(np.int8)
     y_valid = (valid_df['label'] == 'reliable').astype(np.int8)
     y_test = (test_df['label'] == 'reliable').astype(np.int8)
+
+    print(np.unique_counts(y_train))
 
     print("[#] Setting X...")
     
@@ -61,7 +66,7 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     print("[#] Vectorizing data...")
     train_text = vectorizer.fit_transform(train_text)
 
-    # 3. Parallel transform for validation/test
+    # Parallel transform for validation/test
     print("[#] Transforming data...")
     valid_text = vectorizer.transform(valid_text)
     test_text = vectorizer.transform(test_text)
@@ -86,12 +91,15 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     
     print("[#] Performing grid search...")
     print("[#] This may take a while...")
+
+    # Define cross-validation
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
     
     # Use validation set for evaluation during grid search
     grid_search = GridSearchCV(
         pipeline,
         param_grid,
-        cv=3,
+        cv=cv,
         scoring='f1',
         n_jobs=-1,  # Use all available cores
         verbose=3
@@ -103,7 +111,8 @@ def optimize_model(train_text, valid_text, test_text, y_train, y_valid, y_test):
     
     # Fit the model with timing
     start_time = time.time()
-    grid_search.fit(valid_text, y_valid)
+    print("Unique counts in y_train:", np.unique(y_train, return_counts=True))
+    grid_search.fit(train_text, y_train)
     print(f"\nGrid search completed in {time.time() - start_time:.2f} seconds")
     
     # Evaluate on validation set
